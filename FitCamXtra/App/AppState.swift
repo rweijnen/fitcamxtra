@@ -122,6 +122,8 @@ final class AppState {
     let diagnostics: DiagnosticsLog
     /// Camera settings, read from and written to the device.
     let settings: SettingsStore
+    /// The live RTSP view.
+    let liveStream: LiveStream
 
     private let transport: CameraTransport
     private let discovery: DiscoveryService
@@ -140,6 +142,7 @@ final class AppState {
         self.diagnostics = log
         self.sink = sink
         self.settings = SettingsStore(sink: sink)
+        self.liveStream = LiveStream(sink: sink)
         self.transport = transport
         self.discovery = DiscoveryService(transport: transport, interfaces: interfaces, sink: sink)
         self.remembered = RememberedStore.load() ?? .default
@@ -342,6 +345,7 @@ final class AppState {
         discoveryTask = nil
         client = nil
         settings.attach(client: nil)
+        liveStream.stop()
         connection = .disconnected
         stopTicking()
         isRecording = false

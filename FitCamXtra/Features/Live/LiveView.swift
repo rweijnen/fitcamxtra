@@ -5,9 +5,7 @@ struct LiveView: View {
 
     var body: some View {
         ZStack {
-            // Full-bleed feed. The striped placeholder stands in for the RTSP
-            // surface, which is the next piece of work.
-            CameraPlaceholder(caption: "ROAD VIEW - CAMERA FEED")
+            feed
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -30,6 +28,60 @@ struct LiveView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Palette.bg)
+        .task(id: state.connection.camera?.host) {
+            if let host = state.connection.camera?.host {
+                state.liveStream.start(host: host)
+            } else {
+                state.liveStream.stop()
+            }
+        }
+        .onDisappear {
+            // Nothing to watch while another tab is open, and the camera has
+            // little spare capacity, so give the stream back.
+            state.liveStream.stop()
+        }
+    }
+
+    // MARK: - Feed
+
+    @ViewBuilder
+    private var feed: some View {
+        ZStack {
+            Color.black
+
+            if state.connection.isConnected {
+                VideoLayerView(renderer: state.liveStream.renderer)
+                    .opacity(state.liveStream.status.isPlaying ? 1 : 0)
+            }
+
+            switch state.liveStream.status {
+            case .connecting:
+                overlayMessage("Starting the live stream")
+            case .failed(let reason):
+                overlayMessage("Live view unavailable", detail: reason)
+            case .playing where state.liveStream.framesRendered == 0:
+                overlayMessage("Waiting for the first frame")
+            default:
+                EmptyView()
+            }
+        }
+    }
+
+    private func overlayMessage(_ title: String, detail: String? = nil) -> some View {
+        VStack(spacing: 6) {
+            Eyebrow(text: "Live", color: Palette.inkFaint)
+            Text(title)
+                .font(Typo.sans(15, .semibold))
+                .foregroundStyle(Palette.ink)
+            if let detail {
+                Text(detail)
+                    .font(Typo.mono(11))
+                    .foregroundStyle(Palette.inkQuaternary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 34)
     }
 
     // MARK: - Chrome
