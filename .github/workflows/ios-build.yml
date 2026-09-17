@@ -63,6 +63,22 @@ jobs:
             echo "can_sign=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # TestFlight upload stays inert until an App Store Connect API key is
+      # stored, so the build still passes without one.
+      - name: Decide whether we can upload to TestFlight
+        id: testflight
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8_BASE64 }}
+        run: |
+          if [ -n "$KEY_ID" ] && [ -n "$ISSUER_ID" ] && [ -n "$KEY_P8" ]; then
+            echo "can_upload=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No App Store Connect API key; skipping the TestFlight upload."
+            echo "can_upload=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build unsigned
         if: steps.signing.outputs.can_sign == 'false'
         run: |
@@ -166,6 +182,35 @@ jobs:
           path: ${{ env.EXPORT_PATH }}/*.ipa
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload to TestFlight
+        if: >-
+          steps.signing.outputs.can_sign == 'true' &&
+          steps.testflight.outputs.can_upload == 'true' &&
+          github.event_name != 'pull_request'
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          # altool looks for the key by this exact name in this exact directory.
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$KEY_DIR"
+          echo -n "$KEY_P8" | base64 --decode -o "$KEY_DIR/AuthKey_${KEY_ID}.p8"
+
+          IPA=$(find "$EXPORT_PATH" -name "*.ipa" -maxdepth 1 | head -1)
+          echo "Uploading $IPA"
+          xcrun altool --upload-app -f "$IPA" -t ios \
+            --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
+
+          rm -f "$KEY_DIR/AuthKey_${KEY_ID}.p8"
+
+      - name: Remove the App Store Connect key
+        if: always()
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: rm -rf "$HOME/.appstoreconnect"
 
       - name: Remove temporary keychain
         if: always()
