@@ -18,8 +18,16 @@ struct FitCamXtraApp: App {
         .onChange(of: scenePhase) { _, phase in
             // Joining the camera's access point happens in Settings, so the
             // app is usually backgrounded at the moment the network changes.
-            if phase == .active {
+            switch phase {
+            case .active:
                 state.onForeground()
+            case .background:
+                // iOS suspends the app here, and a search caught mid-sweep
+                // neither finishes nor ends. End it so the app returns ready
+                // to look on whatever network the phone is now on.
+                state.onBackground()
+            default:
+                break
             }
         }
     }

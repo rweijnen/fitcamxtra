@@ -35,7 +35,17 @@ public final class URLSessionTransport: CameraTransport, @unchecked Sendable {
         } catch let error as CameraError {
             throw error
         } catch let error as URLError {
-            throw error.code == .timedOut ? CameraError.timedOut : CameraError.notReachable
+            switch error.code {
+            case .timedOut:
+                throw CameraError.timedOut
+            case .cannotConnectToHost, .networkConnectionLost, .cannotFindHost:
+                // A refusal means the packet got there and came back. During a
+                // sweep that is the difference between an empty network and a
+                // phone that is not allowed onto it at all.
+                throw CameraError.connectionRefused
+            default:
+                throw CameraError.notReachable
+            }
         }
     }
 }

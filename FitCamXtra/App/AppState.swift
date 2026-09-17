@@ -145,6 +145,11 @@ final class AppState {
     private var client: CameraClient?
     private var tickTask: Task<Void, Never>?
     private var discoveryTask: Task<Void, Never>?
+    /// Identifies a search so a task that is cancelled, or that finishes late
+    /// after iOS suspended the app, cannot clear the handle of the search that
+    /// replaced it. Without this, a stale run left the app looking busy and
+    /// every later attempt was dropped as "already searching".
+    private var discoveryGeneration = 0
 
     var isSearching: Bool { discoveryTask != nil }
 
@@ -160,7 +165,12 @@ final class AppState {
         self.downloader = downloader
         self.library = MediaLibrary(sink: sink, downloads: downloader)
         self.transport = transport
-        self.discovery = DiscoveryService(transport: transport, interfaces: interfaces, sink: sink)
+        self.discovery = DiscoveryService(
+            transport: transport,
+            interfaces: interfaces,
+            reachability: ICMPPinger(),
+            sink: sink
+        )
         self.remembered = RememberedStore.load() ?? .default
     }
 
@@ -175,6 +185,10 @@ final class AppState {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.sink.log(.info, .network, "Network changed to \(description)")
+                // A sweep already running is walking the subnet the phone just
+                // left, so its result would describe the old network. Start
+                // again rather than let it finish and block the new attempt.
+                self.cancelDiscovery(reason: "the network changed")
                 self.connectIfNeeded(reason: "the network changed")
             }
         }
@@ -197,6 +211,30 @@ final class AppState {
         connectIfNeeded(reason: "the app came to the foreground")
     }
 
+    /// iOS suspends the app within seconds of it leaving the screen, which is
+    /// exactly when someone goes to Settings to join the camera's access
+    /// point. A sweep caught by that suspension neither progresses nor ends:
+    /// one was seen to sit there for 2 hours 45 minutes, and every return to
+    /// the foreground in between was dropped as "already searching". Ending it
+    /// here means the app comes back ready to look on the new network.
+    func onBackground() {
+        cancelDiscovery(reason: "the app went to the background")
+    }
+
+    /// Ends the running search, if there is one, and makes sure its late
+    /// completion cannot clear the handle of whatever replaces it.
+    func cancelDiscovery(reason: String) {
+        guard let task = discoveryTask else { return }
+        sink.log(.info, .app, "Stopping the search because \(reason)")
+        discoveryGeneration &+= 1
+        discoveryTask = nil
+        task.cancel()
+        if case .searching = connection {
+            connection = .disconnected
+        }
+        discoveryStatus = nil
+    }
+
     /// Starts a search unless one is already running. When already connected it
     /// first checks the current camera is still answering, which is one request
     /// rather than a whole sweep.
@@ -211,8 +249,10 @@ final class AppState {
             return
         }
 
+        discoveryGeneration &+= 1
+        let generation = discoveryGeneration
         discoveryTask = Task { @MainActor [weak self] in
-            defer { self?.discoveryTask = nil }
+            defer { self?.finishDiscovery(generation: generation) }
             guard let self else { return }
 
             if let camera = self.connection.camera {
@@ -225,7 +265,7 @@ final class AppState {
             }
 
             self.sink.log(.info, .app, "Searching because \(reason)")
-            await self.runDiscovery()
+            await self.runDiscovery(generation: generation)
         }
     }
 
@@ -261,8 +301,7 @@ final class AppState {
 
     /// Manual "Scan again". Forces a search even when one looks unnecessary.
     func rescan() {
-        discoveryTask?.cancel()
-        discoveryTask = nil
+        cancelDiscovery(reason: "you asked for a rescan")
         connection = .disconnected
         // Scanning again is an explicit request, so it undoes Forget.
         remembered.autoConnectEnabled = true
@@ -270,7 +309,7 @@ final class AppState {
         connectIfNeeded(reason: "you asked for a rescan")
     }
 
-    private func runDiscovery(prefixLength: Int? = nil) async {
+    private func runDiscovery(prefixLength: Int? = nil, generation: Int? = nil) async {
         connection = .searching("Looking for the camera")
         discoveryStatus = nil
         widerScanOffer = nil
@@ -283,6 +322,13 @@ final class AppState {
             Task { @MainActor [weak self] in
                 self?.apply(progress)
             }
+        }
+
+        // A search that was cancelled, by backgrounding or by a network
+        // change, must not write its verdict over the one that replaced it.
+        if let generation, generation != discoveryGeneration {
+            sink.log(.debug, .app, "Discarding the result of a search that was superseded")
+            return
         }
 
         if let camera = outcome.camera {
@@ -304,13 +350,22 @@ final class AppState {
         remembered.autoConnectEnabled = true
         RememberedStore.save(remembered)
 
+        discoveryGeneration &+= 1
+        let generation = discoveryGeneration
         discoveryTask = Task { @MainActor [weak self] in
-            defer { self?.discoveryTask = nil }
+            defer { self?.finishDiscovery(generation: generation) }
             guard let self else { return }
             self.sink.log(.info, .app,
                           "Sweeping the whole /\(offer.prefixLength) because you asked")
-            await self.runDiscovery(prefixLength: offer.prefixLength)
+            await self.runDiscovery(prefixLength: offer.prefixLength, generation: generation)
         }
+    }
+
+    /// Clears the handle only when the search that is ending is still the
+    /// current one.
+    private func finishDiscovery(generation: Int) {
+        guard generation == discoveryGeneration else { return }
+        discoveryTask = nil
     }
 
     private func apply(_ progress: DiscoveryProgress) {

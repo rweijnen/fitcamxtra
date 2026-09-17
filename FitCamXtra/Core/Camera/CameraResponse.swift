@@ -92,6 +92,10 @@ private final class FlatXMLDelegate: NSObject, XMLParserDelegate {
 public enum CameraError: Error, Sendable, Equatable {
     case notReachable
     case timedOut
+    /// Something is at that address and actively said no. During a sweep this
+    /// is the useful negative: it proves the phone can reach the network at
+    /// all, which a timeout does not.
+    case connectionRefused
     case malformedResponse(String)
     case commandFailed(command: Int, status: Int)
     case commandUnsupported(command: Int)
@@ -105,6 +109,8 @@ extension CameraError: LocalizedError {
             return "The camera did not answer."
         case .timedOut:
             return "The camera took too long to answer."
+        case .connectionRefused:
+            return "That address refused the connection."
         case .malformedResponse:
             return "The camera sent a reply the app could not read."
         case .commandFailed(let command, let status):

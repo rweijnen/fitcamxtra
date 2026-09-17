@@ -87,6 +87,13 @@ contiguous and cannot be guessed:**
 
 RSSI is positive despite the dBm label, so it is treated as relative strength.
 
+**The camera answers ICMP echo.** Confirmed on hardware. Discovery pings the
+range first and asks only the addresses that reply for `cmd=3012`, which turns
+253 connection attempts into a handful. The full HTTP sweep still runs when the
+ping pass produces no camera, because an access point may filter echo between
+its clients and a reply can be lost; it is no longer there to cover the camera
+itself.
+
 **Live video is H.265**, not H.264:
 
 ```

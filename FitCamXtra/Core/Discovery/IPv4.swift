@@ -42,18 +42,26 @@ public struct IPv4Subnet: Sendable, Equatable {
     public let address: IPv4Address
     public let prefixLength: Int
     public let gateway: IPv4Address?
+    /// The interface this came from, for the diagnostics. A sweep of the wrong
+    /// network looks identical to a camera that is not there unless the log
+    /// says which interface the range was taken from.
+    public let interfaceName: String?
 
-    public init(address: IPv4Address, prefixLength: Int, gateway: IPv4Address? = nil) {
+    public init(address: IPv4Address, prefixLength: Int, gateway: IPv4Address? = nil,
+                interfaceName: String? = nil) {
         self.address = address
         self.prefixLength = min(max(prefixLength, 0), 32)
         self.gateway = gateway
+        self.interfaceName = interfaceName
     }
 
-    public init?(address: String, netmask: String, gateway: String? = nil) {
+    public init?(address: String, netmask: String, gateway: String? = nil,
+                 interfaceName: String? = nil) {
         guard let parsed = IPv4Address(address), let mask = IPv4Address(netmask) else { return nil }
         self.address = parsed
         self.prefixLength = IPv4Subnet.prefixLength(fromMask: mask.raw)
         self.gateway = gateway.flatMap(IPv4Address.init)
+        self.interfaceName = interfaceName
     }
 
     public static func prefixLength(fromMask mask: UInt32) -> Int {

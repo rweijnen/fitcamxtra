@@ -52,10 +52,42 @@ public struct DiscoveryOutcome: Sendable, Equatable {
     }
 }
 
-/// Supplies the phone's own IPv4 subnet. Implemented per platform, because
+/// Supplies the phone's own IPv4 networks. Implemented per platform, because
 /// this is the one piece of discovery that is not portable.
+///
+/// Plural on purpose: a phone in a car holds more than one local network at
+/// once, and which of them the camera is on cannot be told from the interface
+/// name.
 public protocol NetworkInterfaceProviding: Sendable {
-    func currentWiFiSubnet() -> IPv4Subnet?
+    /// Every local IPv4 network the phone is on, most likely first.
+    func currentIPv4Subnets() -> [IPv4Subnet]
+}
+
+extension NetworkInterfaceProviding {
+    /// The first of them. Kept for callers that only need somewhere to start.
+    public func currentWiFiSubnet() -> IPv4Subnet? {
+        currentIPv4Subnets().first
+    }
+}
+
+/// What an ICMP echo sweep found.
+public struct ReachabilitySweep: Sendable, Equatable {
+    /// Addresses that replied.
+    public let answered: [String]
+    /// Set when the sweep could not be performed at all, which is itself a
+    /// result and must not read as "nothing is there".
+    public let failure: String?
+
+    public init(answered: [String], failure: String?) {
+        self.answered = answered
+        self.failure = failure
+    }
+}
+
+/// Pings addresses. Platform-supplied, because ICMP is not portable; the
+/// decision about when to ping is not, and stays here.
+public protocol HostReachabilityProbing: Sendable {
+    func ping(hosts: [String], timeout: TimeInterval) async -> ReachabilitySweep
 }
 
 /// Finds the camera. The camera announces itself on nothing: the firmware has
@@ -74,6 +106,9 @@ public protocol NetworkInterfaceProviding: Sendable {
 public actor DiscoveryService {
     private let transport: CameraTransport
     private let interfaces: NetworkInterfaceProviding
+    /// Optional: when present, a network that answered nothing over HTTP is
+    /// pinged, so silence can be told from absence.
+    private let reachability: HostReachabilityProbing?
     private let sink: LogSink?
 
     /// Per-probe timeout during the sweep. Long enough for a busy embedded
@@ -86,13 +121,19 @@ public actor DiscoveryService {
     /// Second pass, for a camera that is present but slow to answer.
     public var slowProbeTimeout: TimeInterval = 1.5
 
+    /// Ceiling for the echo sweep of one network. It usually ends well inside
+    /// this, as soon as the replies stop arriving.
+    public var pingTimeout: TimeInterval = 1.5
+
     public init(
         transport: CameraTransport,
         interfaces: NetworkInterfaceProviding,
+        reachability: HostReachabilityProbing? = nil,
         sink: LogSink? = nil
     ) {
         self.transport = transport
         self.interfaces = interfaces
+        self.reachability = reachability
         self.sink = sink
     }
 
@@ -120,15 +161,81 @@ public actor DiscoveryService {
             sink?.log(.info, .discovery, "No remembered address")
         }
 
-        // 2. The phone's own subnet, so we never guess a range.
-        guard let subnet = interfaces.currentWiFiSubnet() else {
+        // 2. The phone's own networks, so we never guess a range. All of them:
+        //    in a car the phone holds the head unit's CarPlay link and the
+        //    wifi network the camera joined at the same time, and no interface
+        //    name says which is which.
+        let subnets = interfaces.currentIPv4Subnets()
+        guard !subnets.isEmpty else {
             sink?.log(.error, .discovery,
-                      "No IPv4 wifi interface found. The phone is probably not on wifi.")
+                      "No local IPv4 network found. The phone is probably not on wifi.")
             onProgress?(.finishedWithoutResult)
             return DiscoveryOutcome(camera: nil, widerScan: nil)
         }
 
-        let width = prefixLength ?? subnet.automaticPrefixLength
+        sink?.log(.info, .discovery,
+                  subnets.count == 1
+                      ? "The phone is on one local network"
+                      : "The phone is on \(subnets.count) local networks; sweeping each in turn",
+                  detail: subnets
+                      .map { "\($0.interfaceName ?? "?")  \($0.address)/\($0.prefixLength)" }
+                      .joined(separator: "\n"))
+
+        // 3. Sweep each of them until one answers.
+        var wider: DiscoveryOutcome.WiderScan?
+        for subnet in subnets {
+            // A wider sweep is asked for by network, so the requested width
+            // applies only to a network that is actually that wide.
+            let width: Int
+            if let prefixLength, subnet.prefixLength <= prefixLength {
+                width = prefixLength
+            } else {
+                width = subnet.automaticPrefixLength
+            }
+
+            switch await sweepOne(subnet, width: width, cachedHost: cachedHost, onProgress: onProgress) {
+            case .found(let camera):
+                let elapsed = String(format: "%.1f", Date().timeIntervalSince(started))
+                sink?.log(.info, .discovery,
+                          "Found the camera at \(camera.host) after \(elapsed)s",
+                          detail: describe(camera))
+                onProgress?(.found(camera))
+                return DiscoveryOutcome(camera: camera, widerScan: nil)
+            case .cancelled:
+                let elapsed = String(format: "%.1f", Date().timeIntervalSince(started))
+                sink?.log(.info, .discovery, "Search stopped after \(elapsed)s before it finished")
+                onProgress?(.finishedWithoutResult)
+                return DiscoveryOutcome(camera: nil, widerScan: nil)
+            case .nothing(let offer):
+                wider = wider ?? offer
+            }
+        }
+
+        let elapsed = String(format: "%.1f", Date().timeIntervalSince(started))
+        if wider == nil {
+            sink?.log(.warning, .discovery,
+                      "No camera answered on any of the phone's networks after \(elapsed)s. "
+                      + "Check the phone is on the same network as the camera and that the "
+                      + "local network permission was allowed.")
+        }
+        onProgress?(.finishedWithoutResult)
+        return DiscoveryOutcome(camera: nil, widerScan: wider)
+    }
+
+    private enum SubnetSweepResult {
+        case found(DiscoveredCamera)
+        case cancelled
+        case nothing(wider: DiscoveryOutcome.WiderScan?)
+    }
+
+    /// One network, fast pass then slow pass.
+    private func sweepOne(
+        _ subnet: IPv4Subnet,
+        width: Int,
+        cachedHost: String?,
+        onProgress: (@Sendable (DiscoveryProgress) -> Void)?
+    ) async -> SubnetSweepResult {
+        let started = Date()
         let label = subnet.rangeDescription(forPrefix: width)
 
         // Report the network, not the phone's own address: they differ, and
@@ -136,6 +243,7 @@ public actor DiscoveryService {
         sink?.log(.info, .discovery,
                   "Sweeping \(label)",
                   detail: """
+                  interface  \(subnet.interfaceName ?? "not known")
                   phone      \(subnet.address)
                   netmask    \(subnet.netmask) (/\(subnet.prefixLength))
                   network    \(subnet.networkAddress)
@@ -144,21 +252,54 @@ public actor DiscoveryService {
                   gateway    \(subnet.gateway.map(String.init(describing:)) ?? "not known")
                   """)
 
-        // 3. Concurrent sweep.
         let targets = subnet.scanTargets(prefixLength: width).filter { $0.description != cachedHost }
         guard !targets.isEmpty else {
             sink?.log(.warning, .discovery, "Nothing to scan on \(label)")
-            onProgress?(.finishedWithoutResult)
-            return DiscoveryOutcome(camera: nil, widerScan: nil)
+            return .nothing(wider: nil)
         }
 
         onProgress?(.sweeping(subnet: label, probed: 0, total: targets.count))
+
+        // 1. Ping first. One echo request per address costs a fraction of a
+        //    TCP connection attempt, and the whole /24 answers inside the time
+        //    a single HTTP pass needs, so asking who is alive before asking
+        //    who is a camera turns 253 connection attempts into a handful.
+        //
+        //    The camera is confirmed to answer echo requests, so this is the
+        //    path that normally finds it. It still does not get to decide the
+        //    answer: an access point can filter echo between its clients and a
+        //    single reply can be lost, so the full HTTP sweep below runs
+        //    whenever this does not produce the camera.
+        let living = await pingSweep(targets: targets, label: label)
+
+        if let living, !living.isEmpty {
+            let addresses = living.compactMap(IPv4Address.init)
+            sink?.log(.info, .discovery,
+                      "Asking the \(addresses.count) live addresses for the camera first")
+
+            // These are known to be up, so they get the generous deadline
+            // rather than the sweep's short one.
+            if let camera = await sweep(targets: addresses, timeout: cachedAddressTimeout, onProbed: { _ in }) {
+                return .found(camera)
+            }
+            sink?.log(.info, .discovery,
+                      "None of the live addresses served the camera's CGI; sweeping the rest")
+        }
+
+        if Task.isCancelled { return .cancelled }
+
+        // 2. Every address, in case the camera is one that does not answer a
+        //    ping at all.
         sink?.log(.info, .discovery,
                   "\(targets.count) addresses, \(maxConcurrentProbes) at a time, "
                   + "\(Int(probeTimeout * 1000)) ms each")
 
         var found = await sweep(targets: targets, timeout: probeTimeout) { probed in
             onProgress?(.sweeping(subnet: label, probed: probed, total: targets.count))
+        }
+
+        if found == nil, Task.isCancelled {
+            return .cancelled
         }
 
         // A busy embedded HTTP server can miss a short deadline. One slower
@@ -173,14 +314,16 @@ public actor DiscoveryService {
             }
         }
 
-        let elapsed = String(format: "%.1f", Date().timeIntervalSince(started))
-        if let found {
-            sink?.log(.info, .discovery,
-                      "Found the camera at \(found.host) after \(elapsed)s",
-                      detail: describe(found))
-            onProgress?(.found(found))
-            return DiscoveryOutcome(camera: found, widerScan: nil)
+        if found == nil, Task.isCancelled {
+            return .cancelled
         }
+
+        if let found {
+            return .found(found)
+        }
+
+        let elapsed = String(format: "%.1f", Date().timeIntervalSince(started))
+        explainSilence(living: living, targets: targets, label: label)
 
         // Only offer the wider sweep when the phone's real network is bigger
         // than what was just swept.
@@ -199,13 +342,10 @@ public actor DiscoveryService {
                       + "/\(subnet.prefixLength), which is \(count) addresses; that is not swept "
                       + "without asking.")
         } else {
-            sink?.log(.warning, .discovery,
-                      "No camera answered on \(label) after \(elapsed)s. Check the phone is on "
-                      + "the camera's wifi and that the local network permission was allowed.")
+            sink?.log(.info, .discovery, "No camera answered on \(label) after \(elapsed)s")
         }
 
-        onProgress?(.finishedWithoutResult)
-        return DiscoveryOutcome(camera: nil, widerScan: wider)
+        return .nothing(wider: wider)
     }
 
     /// Probe one address. Used by discovery and by the manual-entry field.
@@ -272,9 +412,12 @@ public actor DiscoveryService {
         let transport = self.transport
         let window = min(maxConcurrentProbes, targets.count)
 
-        return await withTaskGroup(of: DiscoveredCamera?.self) { group in
+        let outcome = await withTaskGroup(of: ProbeOutcome.self) { group -> (DiscoveredCamera?, SweepTally) in
             var index = 0
             var completed = 0
+            var tally = SweepTally()
+
+            guard !Task.isCancelled else { return (nil, tally) }
 
             for _ in 0..<window {
                 let host = targets[index].description
@@ -288,9 +431,29 @@ public actor DiscoveryService {
                 completed += 1
                 onProbed(completed)
 
-                if let result {
+                switch result {
+                case .camera(let camera):
                     group.cancelAll()
-                    return result
+                    return (camera, tally)
+                case .answeredButNotCamera(let host, let reply):
+                    tally.answeredButNotCamera += 1
+                    tally.note("\(host)  answered, not the camera: \(reply)")
+                case .refused(let host):
+                    tally.refused += 1
+                    tally.note("\(host)  refused the connection")
+                case .timedOut:
+                    tally.timedOut += 1
+                case .otherFailure(let host, let reason):
+                    tally.otherFailure += 1
+                    tally.note("\(host)  \(reason)")
+                }
+
+                // The app cancels a sweep when the network changes or it goes
+                // to the background. Stop feeding the group rather than
+                // probing an address range the phone has left.
+                if Task.isCancelled {
+                    group.cancelAll()
+                    return (nil, tally)
                 }
 
                 if index < targets.count {
@@ -301,31 +464,187 @@ public actor DiscoveryService {
                     }
                 }
             }
+            return (nil, tally)
+        }
+
+        if outcome.0 == nil {
+            let tally = outcome.1
+            let detail = [tally.detail, reachabilityNote(tally)]
+                .compactMap { $0 }
+                .joined(separator: "\n\n")
+            sink?.log(.info, .discovery,
+                      "HTTP pass at \(Int(timeout * 1000)) ms: \(tally.summary)",
+                      detail: detail.isEmpty ? nil : detail)
+        }
+        return outcome.0
+    }
+
+    /// Asks the whole range who is alive. Returns the addresses that answered,
+    /// or nil when no ping sweep could be run at all — which is not the same
+    /// as nobody answering, and callers must not treat it as such.
+    private func pingSweep(targets: [IPv4Address], label: String) async -> [String]? {
+        guard let reachability, !Task.isCancelled else { return nil }
+
+        let started = Date()
+        sink?.log(.info, .discovery, "Pinging \(targets.count) addresses on \(label)")
+
+        let sweep = await reachability.ping(hosts: targets.map(\.description), timeout: pingTimeout)
+        let elapsed = String(format: "%.1f", Date().timeIntervalSince(started))
+
+        if let failure = sweep.failure {
+            sink?.log(.warning, .discovery,
+                      "The ping sweep could not run: \(failure)",
+                      detail: "Falling back to probing every address over HTTP.")
             return nil
         }
+
+        // Who answered is the single most useful line in a failed export, so
+        // it is recorded whether or not the camera turns up afterwards.
+        sink?.log(.info, .discovery,
+                  "\(sweep.answered.count) of \(targets.count) answered a ping in \(elapsed)s",
+                  detail: sweep.answered.isEmpty
+                      ? nil
+                      : sweep.answered.prefix(SweepTally.maxNotes).joined(separator: "\n")
+                        + (sweep.answered.count > SweepTally.maxNotes
+                           ? "\nand \(sweep.answered.count - SweepTally.maxNotes) more" : ""))
+        return sweep.answered
+    }
+
+    /// Says what a network that produced no camera actually told us. The three
+    /// cases mean different things and "no camera found" hides all of them.
+    private func explainSilence(living: [String]?, targets: [IPv4Address], label: String) {
+        guard let living else { return }
+
+        if living.isEmpty {
+            sink?.log(.warning, .discovery,
+                      "Nothing on \(label) answered a ping either",
+                      detail: """
+                      Not one of \(targets.count) addresses replied to an echo request, so \
+                      this is not about port 80: the phone is not exchanging packets with \
+                      anything on this network. That points at the network rather than at \
+                      the camera.
+                      """)
+            return
+        }
+
+        sink?.log(.warning, .discovery,
+                  "\(living.count) addresses on \(label) are alive but none is the camera",
+                  detail: """
+                  \(living.prefix(30).joined(separator: "\n"))
+
+                  The phone can reach this network. If the camera is one of these it did \
+                  not answer cmd=\(CameraCommand.version.rawValue) on port 80, and its \
+                  address can be entered by hand on the Connect screen.
+                  """)
+    }
+
+    /// Says what the tally means, because "no camera found" reads the same
+    /// whether the network was empty or the phone was never let onto it.
+    private func reachabilityNote(_ tally: SweepTally) -> String? {
+        guard tally.reachable == 0, tally.timedOut > 0 else { return nil }
+        return """
+        Nothing on this network answered in any way, not even a refusal. That \
+        is what it looks like when the local network permission is off \
+        (Settings > FitCamXtra > Local Network), or when the access point \
+        keeps its clients apart, as car head units often do. It is not proof \
+        that the camera is absent.
+        """
     }
 
     private static func probeStatic(
         host: String,
         timeout: TimeInterval,
         transport: CameraTransport
-    ) async -> DiscoveredCamera? {
+    ) async -> ProbeOutcome {
         let request = CameraRequest(.version)
-        guard let url = URL(string: "http://\(host)\(request.path())") else { return nil }
+        guard let url = URL(string: "http://\(host)\(request.path())") else { return .otherFailure }
         do {
             let data = try await transport.get(url: url, timeout: timeout)
             let response = try CameraResponseParser.parse(data)
             let version = CameraVersion(response: response)
-            guard version.looksLikeFitCamX else { return nil }
-            return DiscoveredCamera(
+            guard version.looksLikeFitCamX else {
+                return .answeredButNotCamera(
+                    host: host,
+                    reply: response.raw
+                        .replacingOccurrences(of: "\n", with: " ")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .prefix(160)
+                        .description
+                )
+            }
+            return .camera(DiscoveredCamera(
                 host: host,
                 model: version.model,
                 firmware: version.firmware,
                 foundBy: .subnetSweep,
                 versionReply: String(response.raw.prefix(600))
-            )
+            ))
+        } catch CameraError.timedOut {
+            return .timedOut
+        } catch CameraError.connectionRefused {
+            return .refused(host: host)
+        } catch let error as CameraError {
+            return .otherFailure(host: host, reason: error.errorDescription ?? "\(error)")
         } catch {
-            return nil
+            // Bytes came back that the parser could not read. Whatever is
+            // there is reachable, which is what the tally counts.
+            return .answeredButNotCamera(host: host, reply: error.localizedDescription)
+        }
+    }
+
+    /// What one probe came back as. A sweep that finds nothing is not one
+    /// story but several, and the log has to tell them apart.
+    ///
+    /// Everything except a plain timeout carries the address and what it said,
+    /// because that is the material for reading a failed sweep afterwards. The
+    /// timeouts are only counted: there are usually 250 of them and they all
+    /// say the same nothing.
+    private enum ProbeOutcome: Sendable {
+        case camera(DiscoveredCamera)
+        case answeredButNotCamera(host: String, reply: String)
+        case refused(host: String)
+        case timedOut
+        case otherFailure(host: String, reason: String)
+    }
+
+    /// The tally of one pass, logged whether or not it found anything.
+    private struct SweepTally: Sendable {
+        /// Per-address lines for everything that was not a plain timeout. The
+        /// log is bounded, so this is one entry per pass rather than one per
+        /// address, and it is capped in case a network is full of web servers.
+        static let maxNotes = 40
+
+        var answeredButNotCamera = 0
+        var refused = 0
+        var timedOut = 0
+        var otherFailure = 0
+        private(set) var notes: [String] = []
+        private var droppedNotes = 0
+
+        mutating func note(_ line: String) {
+            if notes.count < Self.maxNotes {
+                notes.append(line)
+            } else {
+                droppedNotes += 1
+            }
+        }
+
+        /// Addresses that proved the phone can reach this network at all.
+        var reachable: Int { answeredButNotCamera + refused }
+
+        var summary: String {
+            "\(answeredButNotCamera) answered, \(refused) refused, "
+            + "\(timedOut) timed out, \(otherFailure) failed otherwise"
+        }
+
+        /// Every address worth naming, or nil when they all timed out.
+        var detail: String? {
+            guard !notes.isEmpty else { return nil }
+            var lines = notes
+            if droppedNotes > 0 {
+                lines.append("and \(droppedNotes) more")
+            }
+            return lines.joined(separator: "\n")
         }
     }
 }

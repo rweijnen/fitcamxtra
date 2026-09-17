@@ -1,28 +1,40 @@
 import Foundation
 import Darwin
 
-/// Reads the phone's own IPv4 address and netmask on the wifi interface, so a
-/// sweep targets the real subnet instead of a guessed one.
+/// Reads the phone's own IPv4 addresses and netmasks, so a sweep targets a
+/// real subnet instead of a guessed one.
 ///
 /// iOS gives an app its own interface addresses but not the ARP table and not
 /// the default route, so the gateway is inferred rather than read. It is only
 /// used to probe one address early, never to exclude one, so a wrong guess
 /// costs nothing but ordering.
+///
+/// **Every local IPv4 network is returned, not just the one that looks most
+/// like wifi.** A phone in a car is on more than one at once: the head unit's
+/// wireless CarPlay link and the wifi network the camera joined are different
+/// networks on different interfaces, and picking a single interface by name
+/// meant the app could sweep the one the camera was not on and report the
+/// camera as absent. Interface names are not a reliable guide to which is
+/// which, so all of them are swept in turn.
 public struct NetworkInterfaceProvider: NetworkInterfaceProviding {
-    /// en0 is wifi on iPhone. Others are listed for the simulator and for
-    /// hotspot or wired adapters.
-    private let candidateInterfaces: [String]
+    /// Interfaces that cannot carry a camera on the local network: cellular,
+    /// VPN tunnels, and Apple's peer-to-peer link-local radios.
+    private static let excludedPrefixes = ["pdp_ip", "utun", "ipsec", "awdl", "llw", "lo"]
 
-    public init(candidateInterfaces: [String] = ["en0", "en1", "en2", "bridge100"]) {
-        self.candidateInterfaces = candidateInterfaces
+    /// Swept first when present. This is preference only: everything local is
+    /// swept either way.
+    private let preferredOrder: [String]
+
+    public init(preferredOrder: [String] = ["en0", "en1", "en2", "bridge100"]) {
+        self.preferredOrder = preferredOrder
     }
 
-    public func currentWiFiSubnet() -> IPv4Subnet? {
+    public func currentIPv4Subnets() -> [IPv4Subnet] {
         var head: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&head) == 0, let first = head else { return nil }
+        guard getifaddrs(&head) == 0, let first = head else { return [] }
         defer { freeifaddrs(head) }
 
-        var best: (name: String, address: IPv4Address, mask: IPv4Address)?
+        var found: [(name: String, address: IPv4Address, mask: IPv4Address)] = []
 
         var cursor: UnsafeMutablePointer<ifaddrs>? = first
         while let entry = cursor {
@@ -35,28 +47,35 @@ public struct NetworkInterfaceProvider: NetworkInterfaceProviding {
                   let maskPointer = entry.pointee.ifa_netmask else { continue }
 
             let name = String(cString: entry.pointee.ifa_name)
-            guard candidateInterfaces.contains(name) else { continue }
+            guard !Self.excludedPrefixes.contains(where: { name.hasPrefix($0) }) else { continue }
 
             guard let address = Self.ipv4(from: addrPointer),
                   let mask = Self.ipv4(from: maskPointer),
                   address.isPrivate else { continue }
 
-            // Prefer the earliest candidate in the list, which is wifi.
-            if let current = best,
-               let currentRank = candidateInterfaces.firstIndex(of: current.name),
-               let newRank = candidateInterfaces.firstIndex(of: name),
-               newRank >= currentRank {
-                continue
-            }
-            best = (name, address, mask)
+            // The same network can appear twice under different interface
+            // names. Sweeping it twice would only waste seconds.
+            let network = address.raw & mask.raw
+            let alreadyHave = found.contains { ($0.address.raw & $0.mask.raw) == network }
+            guard !alreadyHave else { continue }
+
+            found.append((name, address, mask))
         }
 
-        guard let best else { return nil }
-        return IPv4Subnet(
-            address: best.address,
-            prefixLength: IPv4Subnet.prefixLength(fromMask: best.mask.raw),
-            gateway: Self.likelyGateway(address: best.address, mask: best.mask)
-        )
+        return found
+            .sorted { rank(of: $0.name) < rank(of: $1.name) }
+            .map { entry in
+                IPv4Subnet(
+                    address: entry.address,
+                    prefixLength: IPv4Subnet.prefixLength(fromMask: entry.mask.raw),
+                    gateway: Self.likelyGateway(address: entry.address, mask: entry.mask),
+                    interfaceName: entry.name
+                )
+            }
+    }
+
+    private func rank(of name: String) -> Int {
+        preferredOrder.firstIndex(of: name) ?? preferredOrder.count
     }
 
     private static func ipv4(from pointer: UnsafeMutablePointer<sockaddr>) -> IPv4Address? {
