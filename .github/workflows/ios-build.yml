@@ -252,7 +252,7 @@ jobs:
           "$VENV/bin/pip" install --quiet --disable-pip-version-check pyjwt cryptography
           KEY_DIR="$HOME/.appstoreconnect/private_keys"
           export APP_STORE_CONNECT_KEY_PATH="$KEY_DIR/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
-          python3 scripts/testflight_notes.py
+          "$VENV/bin/python" scripts/testflight_notes.py
 
       - name: Remove the App Store Connect key
         if: always()
