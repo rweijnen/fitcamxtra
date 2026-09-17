@@ -37,6 +37,9 @@ struct ConnectView: View {
                     if let camera = state.connection.camera {
                         foundOnLAN(camera)
                     } else if !state.isSearching {
+                        if let offer = state.widerScanOffer {
+                            widerScanCard(offer)
+                        }
                         apInstructions
                     }
 
@@ -93,6 +96,52 @@ struct ConnectView: View {
             .cardSurface(border: Palette.accent.opacity(0.45))
         }
         .buttonStyle(.plain)
+    }
+
+    /// Offered only when the phone's network is genuinely wider than the
+    /// range already swept. A /16 is tens of thousands of probes, so the app
+    /// asks rather than deciding to spend minutes on it.
+    private func widerScanCard(_ offer: DiscoveryOutcome.WiderScan) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Eyebrow(text: "Wider network", color: Palette.accentText)
+
+            Text("Your network is bigger than the part just searched")
+                .font(Typo.sans(15, .semibold))
+                .foregroundStyle(Palette.ink)
+
+            Text("The phone is on \(offer.network), which is \(offer.addressCount) addresses. Only the 254 around the phone were searched. Searching all of it takes roughly \(durationLabel(offer.estimatedSeconds)).")
+                .font(Typo.sans(13))
+                .foregroundStyle(Palette.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                state.scanWiderNetwork()
+            } label: {
+                Text("Search the whole network")
+                    .font(Typo.sans(14, .semibold))
+                    .foregroundStyle(Palette.accentInk)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(
+                        RoundedRectangle(cornerRadius: Metrics.Radius.card, style: .continuous)
+                            .fill(Palette.accent)
+                    )
+            }
+            .buttonStyle(.plain)
+
+            Text("If you already know the camera's address, entering it below is instant.")
+                .font(Typo.mono(10.5))
+                .foregroundStyle(Palette.inkQuaternary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .cardSurface(border: Palette.accent.opacity(0.45))
+    }
+
+    private func durationLabel(_ seconds: Int) -> String {
+        if seconds < 90 { return "\(seconds) seconds" }
+        return "\(Int((Double(seconds) / 60).rounded())) minutes"
     }
 
     /// How to reach a camera running its own access point.

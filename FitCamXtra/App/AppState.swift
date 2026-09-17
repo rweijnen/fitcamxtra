@@ -99,6 +99,10 @@ final class AppState {
     var remembered: RememberedCamera = .default
     var networkMode: NetworkMode = .accessPoint
     var discoveryStatus: String?
+    /// Set when the phone's network is wider than the range swept without
+    /// asking, so the UI can offer the full sweep rather than the app quietly
+    /// concluding the camera is absent.
+    var widerScanOffer: DiscoveryOutcome.WiderScan?
 
     // Live
     var isRecording = false
@@ -258,22 +262,46 @@ final class AppState {
         connectIfNeeded(reason: "you asked for a rescan")
     }
 
-    private func runDiscovery() async {
+    private func runDiscovery(prefixLength: Int? = nil) async {
         connection = .searching("Looking for the camera")
         discoveryStatus = nil
+        widerScanOffer = nil
 
         let cached = remembered.lastHost
-        let found = await discovery.discover(cachedHost: cached) { [weak self] progress in
+        let outcome = await discovery.discover(
+            cachedHost: cached,
+            prefixLength: prefixLength
+        ) { [weak self] progress in
             Task { @MainActor [weak self] in
                 self?.apply(progress)
             }
         }
 
-        if let found {
-            await connect(to: found)
+        if let camera = outcome.camera {
+            await connect(to: camera)
         } else {
             connection = .disconnected
-            discoveryStatus = "No camera found on this network."
+            widerScanOffer = outcome.widerScan
+            discoveryStatus = outcome.widerScan == nil
+                ? "No camera found on this network."
+                : "No camera on this part of the network."
+        }
+    }
+
+    /// Sweeps the phone's whole network, which the app never does unaided
+    /// because it can run to tens of thousands of probes.
+    func scanWiderNetwork() {
+        guard let offer = widerScanOffer, discoveryTask == nil else { return }
+        widerScanOffer = nil
+        remembered.autoConnectEnabled = true
+        RememberedStore.save(remembered)
+
+        discoveryTask = Task { @MainActor [weak self] in
+            defer { self?.discoveryTask = nil }
+            guard let self else { return }
+            self.sink.log(.info, .app,
+                          "Sweeping the whole /\(offer.prefixLength) because you asked")
+            await self.runDiscovery(prefixLength: offer.prefixLength)
         }
     }
 

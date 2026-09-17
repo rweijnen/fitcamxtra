@@ -32,6 +32,23 @@ public enum DiscoveryProgress: Sendable, Equatable {
     case finishedWithoutResult
 }
 
+/// What a finished search found, and what is still worth trying.
+public struct DiscoveryOutcome: Sendable, Equatable {
+    public let camera: DiscoveredCamera?
+    /// Set when the phone's network is wider than the range swept without
+    /// asking, so the caller can offer the full sweep instead of the app
+    /// quietly deciding the camera is not there.
+    public let widerScan: WiderScan?
+
+    public struct WiderScan: Sendable, Equatable {
+        public let prefixLength: Int
+        public let network: String
+        public let addressCount: Int
+        /// Rough seconds, from the probe timeout and how many run at once.
+        public let estimatedSeconds: Int
+    }
+}
+
 /// Supplies the phone's own IPv4 subnet. Implemented per platform, because
 /// this is the one piece of discovery that is not portable.
 public protocol NetworkInterfaceProviding: Sendable {
@@ -63,6 +80,8 @@ public actor DiscoveryService {
     public var maxConcurrentProbes: Int = 48
     /// The cached address gets longer, because a hit here ends discovery.
     public var cachedAddressTimeout: TimeInterval = 1.5
+    /// Second pass, for a camera that is present but slow to answer.
+    public var slowProbeTimeout: TimeInterval = 1.5
 
     public init(
         transport: CameraTransport,
@@ -75,10 +94,12 @@ public actor DiscoveryService {
     }
 
     /// Full discovery run. `onProgress` is called as work advances.
+    /// Sweeps the phone's own /24, or `prefixLength` when one is given.
     public func discover(
         cachedHost: String?,
+        prefixLength: Int? = nil,
         onProgress: (@Sendable (DiscoveryProgress) -> Void)? = nil
-    ) async -> DiscoveredCamera? {
+    ) async -> DiscoveryOutcome {
         let started = Date()
         sink?.log(.info, .discovery, "Discovery started")
 
@@ -89,7 +110,7 @@ public actor DiscoveryService {
             if let camera = await probe(host: cachedHost, timeout: cachedAddressTimeout, source: .cachedAddress) {
                 sink?.log(.info, .discovery, "Camera answered at \(cachedHost)", detail: describe(camera))
                 onProgress?(.found(camera))
-                return camera
+                return DiscoveryOutcome(camera: camera, widerScan: nil)
             }
             sink?.log(.info, .discovery, "Remembered address did not answer; sweeping")
         } else {
@@ -101,30 +122,52 @@ public actor DiscoveryService {
             sink?.log(.error, .discovery,
                       "No IPv4 wifi interface found. The phone is probably not on wifi.")
             onProgress?(.finishedWithoutResult)
-            return nil
+            return DiscoveryOutcome(camera: nil, widerScan: nil)
         }
 
-        let label = "\(subnet.address)/\(subnet.scanPrefixLength)"
+        let width = prefixLength ?? subnet.automaticPrefixLength
+        let label = subnet.rangeDescription(forPrefix: width)
+
+        // Report the network, not the phone's own address: they differ, and
+        // printing the host address made the sweep look wrong.
         sink?.log(.info, .discovery,
-                  "Phone is \(subnet.address), scanning \(label)",
-                  detail: "netmask prefix \(subnet.prefixLength), gateway guess "
-                        + (subnet.gateway.map(String.init(describing:)) ?? "none"))
+                  "Sweeping \(label)",
+                  detail: """
+                  phone      \(subnet.address)
+                  netmask    \(subnet.netmask) (/\(subnet.prefixLength))
+                  network    \(subnet.networkAddress)
+                  broadcast  \(subnet.broadcastAddress)
+                  scanning   \(label), \(subnet.hostCount(forPrefix: width)) addresses
+                  gateway    \(subnet.gateway.map(String.init(describing:)) ?? "not known")
+                  """)
 
         // 3. Concurrent sweep.
-        let targets = subnet.scanTargets().filter { $0.description != cachedHost }
+        let targets = subnet.scanTargets(prefixLength: width).filter { $0.description != cachedHost }
         guard !targets.isEmpty else {
             sink?.log(.warning, .discovery, "Nothing to scan on \(label)")
             onProgress?(.finishedWithoutResult)
-            return nil
+            return DiscoveryOutcome(camera: nil, widerScan: nil)
         }
 
         onProgress?(.sweeping(subnet: label, probed: 0, total: targets.count))
         sink?.log(.info, .discovery,
-                  "Sweeping \(targets.count) addresses, \(maxConcurrentProbes) at a time, "
+                  "\(targets.count) addresses, \(maxConcurrentProbes) at a time, "
                   + "\(Int(probeTimeout * 1000)) ms each")
 
-        let found = await sweep(targets: targets) { probed in
+        var found = await sweep(targets: targets, timeout: probeTimeout) { probed in
             onProgress?(.sweeping(subnet: label, probed: probed, total: targets.count))
+        }
+
+        // A busy embedded HTTP server can miss a short deadline. One slower
+        // pass costs a few seconds and is cheaper than telling someone their
+        // camera is absent when it is merely slow.
+        if found == nil {
+            sink?.log(.info, .discovery,
+                      "Nothing answered in \(Int(probeTimeout * 1000)) ms; trying again at "
+                      + "\(Int(slowProbeTimeout * 1000)) ms")
+            found = await sweep(targets: targets, timeout: slowProbeTimeout) { probed in
+                onProgress?(.sweeping(subnet: label, probed: probed, total: targets.count))
+            }
         }
 
         let elapsed = String(format: "%.1f", Date().timeIntervalSince(started))
@@ -133,14 +176,33 @@ public actor DiscoveryService {
                       "Found the camera at \(found.host) after \(elapsed)s",
                       detail: describe(found))
             onProgress?(.found(found))
+            return DiscoveryOutcome(camera: found, widerScan: nil)
+        }
+
+        // Only offer the wider sweep when the phone's real network is bigger
+        // than what was just swept.
+        var wider: DiscoveryOutcome.WiderScan?
+        if subnet.isWiderThanAutomatic && width > subnet.prefixLength {
+            let count = subnet.hostCount(forPrefix: subnet.prefixLength)
+            let seconds = Int((Double(count) / Double(max(maxConcurrentProbes, 1))) * probeTimeout)
+            wider = DiscoveryOutcome.WiderScan(
+                prefixLength: subnet.prefixLength,
+                network: subnet.rangeDescription(forPrefix: subnet.prefixLength),
+                addressCount: count,
+                estimatedSeconds: max(seconds, 1)
+            )
+            sink?.log(.warning, .discovery,
+                      "No camera on \(label) after \(elapsed)s. The phone's network is actually "
+                      + "/\(subnet.prefixLength), which is \(count) addresses; that is not swept "
+                      + "without asking.")
         } else {
             sink?.log(.warning, .discovery,
-                      "No camera answered on \(label) after \(elapsed)s. "
-                      + "Check the phone is on the camera's wifi and that the "
-                      + "local network permission was allowed.")
-            onProgress?(.finishedWithoutResult)
+                      "No camera answered on \(label) after \(elapsed)s. Check the phone is on "
+                      + "the camera's wifi and that the local network permission was allowed.")
         }
-        return found
+
+        onProgress?(.finishedWithoutResult)
+        return DiscoveryOutcome(camera: nil, widerScan: wider)
     }
 
     /// Probe one address. Used by discovery and by the manual-entry field.
@@ -199,10 +261,10 @@ public actor DiscoveryService {
     /// stops the moment one answers.
     private func sweep(
         targets: [IPv4Address],
+        timeout: TimeInterval,
         onProbed: @Sendable @escaping (Int) -> Void
     ) async -> DiscoveredCamera? {
         let transport = self.transport
-        let timeout = self.probeTimeout
         let window = min(maxConcurrentProbes, targets.count)
 
         return await withTaskGroup(of: DiscoveredCamera?.self) { group in

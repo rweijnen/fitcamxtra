@@ -66,63 +66,103 @@ public struct IPv4Subnet: Sendable, Equatable {
         return count
     }
 
-    /// Scan width is clamped to a /24 around the phone. A wider netmask would
-    /// mean tens of thousands of probes for no practical gain: consumer
-    /// networks and head units put the camera on the phone's own /24.
-    public var scanPrefixLength: Int {
-        max(prefixLength, 24)
+    /// The network this address sits on, at its real netmask.
+    public var networkAddress: IPv4Address {
+        IPv4Address(raw: address.raw & maskBits(prefixLength))
     }
 
-    public var scanNetwork: UInt32 {
-        let bits = scanPrefixLength
-        guard bits < 32 else { return address.raw }
-        let mask: UInt32 = bits == 0 ? 0 : ~UInt32(0) << (32 - bits)
-        return address.raw & mask
+    public var broadcastAddress: IPv4Address {
+        IPv4Address(raw: address.raw | ~maskBits(prefixLength))
     }
 
-    public var scanHostCount: Int {
-        let bits = 32 - scanPrefixLength
+    public var netmask: IPv4Address {
+        IPv4Address(raw: maskBits(prefixLength))
+    }
+
+    /// Addresses in the real network, excluding network and broadcast.
+    public var hostCount: Int {
+        hostCount(forPrefix: prefixLength)
+    }
+
+    public func hostCount(forPrefix prefix: Int) -> Int {
+        let bits = 32 - min(max(prefix, 0), 32)
         guard bits > 1 else { return 0 }
+        guard bits < 31 else { return Int(UInt32.max) }
         return (1 << bits) - 2
     }
 
-    /// Every host worth probing: the subnet minus the network address, the
-    /// broadcast address and the phone itself.
+    /// A network wider than this is not swept without being asked. A /16 is
+    /// 65,534 probes, which is minutes of scanning, so the user decides.
+    public static let automaticPrefixFloor = 24
+
+    public var isWiderThanAutomatic: Bool {
+        prefixLength < Self.automaticPrefixFloor
+    }
+
+    /// The width swept without asking: the real netmask, or the /24 around the
+    /// phone when the network is wider than that.
+    public var automaticPrefixLength: Int {
+        max(prefixLength, Self.automaticPrefixFloor)
+    }
+
+    private func maskBits(_ prefix: Int) -> UInt32 {
+        let bits = min(max(prefix, 0), 32)
+        return bits == 0 ? 0 : ~UInt32(0) << (32 - bits)
+    }
+
+    public func network(forPrefix prefix: Int) -> IPv4Address {
+        IPv4Address(raw: address.raw & maskBits(prefix))
+    }
+
+    /// Every host worth probing at the given width: the range minus its
+    /// network address, its broadcast address and the phone itself.
     ///
     /// The gateway is deliberately **not** excluded. On the camera's own access
     /// point the camera *is* the gateway, so skipping it would skip the very
     /// device we are looking for. Likely addresses are ordered first instead,
     /// which costs nothing and usually ends the sweep on the first result.
-    public func scanTargets() -> [IPv4Address] {
-        let bits = 32 - scanPrefixLength
-        guard bits > 1, bits <= 8 else { return [] }
-        let network = scanNetwork
+    public func scanTargets(prefixLength prefix: Int? = nil) -> [IPv4Address] {
+        let width = min(max(prefix ?? automaticPrefixLength, 8), 32)
+        let bits = 32 - width
+        guard bits > 1, bits <= 24 else { return [] }
+
+        let base = address.raw & maskBits(width)
         let total = UInt32(1) << UInt32(bits)
         let last = total - 1
 
         // Ordered by how often a camera or router sits there: the gateway we
-        // inferred, then the high address this model uses on its own AP, then
-        // the usual router address.
+        // inferred, then the high address this model uses on its own access
+        // point, then the usual router address.
         var preferred: [UInt32] = []
-        if let gateway { preferred.append(gateway.raw) }
-        preferred.append(network | (last - 1))   // .254 on a /24
-        preferred.append(network | 1)            // .1 on a /24
+        if let gateway, gateway.raw & maskBits(width) == base {
+            preferred.append(gateway.raw)
+        }
+        let localBase = address.raw & maskBits(24)
+        preferred.append(localBase | 254)
+        preferred.append(localBase | 1)
 
-        var seen = Set<UInt32>([network, network | last, address.raw])
+        var seen = Set<UInt32>([base, base | last, address.raw])
         var targets: [IPv4Address] = []
-        targets.reserveCapacity(Int(total))
+        targets.reserveCapacity(Int(min(total, 65_536)))
 
         for candidate in preferred where !seen.contains(candidate) {
-            guard candidate > network, candidate < network | last else { continue }
+            guard candidate > base, candidate < base | last else { continue }
             seen.insert(candidate)
             targets.append(IPv4Address(raw: candidate))
         }
 
         for offset in 1..<last {
-            let candidate = network | offset
+            let candidate = base | offset
             if seen.contains(candidate) { continue }
             targets.append(IPv4Address(raw: candidate))
         }
         return targets
+    }
+
+    /// A human description of what will be swept, using the network address
+    /// rather than the phone's own address.
+    public func rangeDescription(forPrefix prefix: Int? = nil) -> String {
+        let width = prefix ?? automaticPrefixLength
+        return "\(network(forPrefix: width))/\(width)"
     }
 }
