@@ -557,7 +557,9 @@ public actor DiscoveryService {
         transport: CameraTransport
     ) async -> ProbeOutcome {
         let request = CameraRequest(.version)
-        guard let url = URL(string: "http://\(host)\(request.path())") else { return .otherFailure }
+        guard let url = URL(string: "http://\(host)\(request.path())") else {
+            return .otherFailure(host: host, reason: "not a usable address")
+        }
         do {
             let data = try await transport.get(url: url, timeout: timeout)
             let response = try CameraResponseParser.parse(data)
