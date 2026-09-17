@@ -23,7 +23,7 @@ struct ConnectView: View {
                         .tracking(-0.9)
                         .foregroundStyle(Palette.ink)
 
-                    Text("Looking on your wifi and for the camera's own network.")
+                    Text("Looking on the wifi your phone is joined to, whether that is your home network or the camera's own.")
                         .font(Typo.sans(14))
                         .foregroundStyle(Palette.inkSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -36,13 +36,13 @@ struct ConnectView: View {
 
                     if let camera = state.connection.camera {
                         foundOnLAN(camera)
+                    } else if !state.isSearching {
+                        apInstructions
                     }
-
-                    apCard
 
                     manualEntry
 
-                    Text("Matching names that start with \(state.remembered.ssidPrefix). Joining the AP needs the local-network and hotspot prompts iOS shows once.")
+                    Text("The first connection asks for local network permission. Refusing it means the app can never find the camera.")
                         .font(Typo.mono(10.5))
                         .foregroundStyle(Palette.inkQuaternary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -80,7 +80,7 @@ struct ConnectView: View {
                     Text(camera.model ?? state.remembered.name)
                         .font(Typo.sans(15, .semibold))
                         .foregroundStyle(Palette.ink)
-                    Text("STATION - \(camera.host)")
+                    Text("\(state.networkMode.label) - \(camera.host)")
                         .font(Typo.mono(11))
                         .foregroundStyle(Palette.inkQuaternary)
                 }
@@ -95,28 +95,34 @@ struct ConnectView: View {
         .buttonStyle(.plain)
     }
 
-    private var apCard: some View {
-        // Joining the camera's own AP needs NEHotspotConfiguration, which needs
-        // the Hotspot Configuration capability on the App ID. Disabled until
-        // that entitlement is provisioned.
-        HStack(spacing: 12) {
-            Circle().fill(Palette.inkQuaternary).frame(width: 10, height: 10)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("\(state.remembered.ssidPrefix)DW")
-                    .font(Typo.sans(15, .semibold))
-                    .foregroundStyle(Palette.ink)
-                Text("AP - JOIN THIS NETWORK")
-                    .font(Typo.mono(11))
-                    .foregroundStyle(Palette.inkQuaternary)
-            }
-            Spacer()
-            Text("SOON")
-                .font(Typo.mono(9.5, .bold))
-                .foregroundStyle(Palette.inkFaint)
+    /// How to reach a camera running its own access point.
+    ///
+    /// iOS never lets an app list the wifi networks in range, so there is no
+    /// honest way to show one as "found". Even with the Hotspot Configuration
+    /// entitlement an app can only ask to join a name it already knows. Until
+    /// that entitlement exists this says what to do instead of implying the
+    /// app found something.
+    private var apInstructions: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Eyebrow(text: "On the camera's own wifi")
+
+            Text("Join it in iOS Settings")
+                .font(Typo.sans(15, .semibold))
+                .foregroundStyle(Palette.ink)
+
+            Text("Open Settings, then Wi-Fi, and pick the network starting with \(state.remembered.ssidPrefix). Come back here and the app finds the camera by itself. Your phone has no internet while on the camera's wifi, which is expected.")
+                .font(Typo.sans(13))
+                .foregroundStyle(Palette.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Joining it from inside the app needs an Apple entitlement this build does not carry yet.")
+                .font(Typo.mono(10.5))
+                .foregroundStyle(Palette.inkQuaternary)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .cardSurface()
-        .opacity(0.55)
     }
 
     private var manualEntry: some View {
