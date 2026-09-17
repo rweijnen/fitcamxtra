@@ -13,6 +13,9 @@ struct RememberedCamera: Codable, Equatable {
     var ssidPrefix: String
     var lastSeenEventID: String?
     var autoSaveNewEvents: Bool
+    /// The camera's own access point, as the camera reported it (cmd=3029).
+    /// Empty until one has said so: the name cannot be derived from the model,
+    /// and Connect used to send people looking for an invented one.
     /// The home network the camera was last told to join. The passphrase is
     /// deliberately not kept: it goes to the camera and nowhere else.
     var homeSSID: String?
@@ -24,7 +27,7 @@ struct RememberedCamera: Codable, Equatable {
         name: "",
         lastHost: nil,
         lastSSID: nil,
-        ssidPrefix: "CAR-WA7053",
+        ssidPrefix: "",
         lastSeenEventID: nil,
         autoSaveNewEvents: false,
         homeSSID: nil,
@@ -60,7 +63,10 @@ struct RememberedCamera: Codable, Equatable {
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
         lastHost = try container.decodeIfPresent(String.self, forKey: .lastHost)
         lastSSID = try container.decodeIfPresent(String.self, forKey: .lastSSID)
-        ssidPrefix = try container.decodeIfPresent(String.self, forKey: .ssidPrefix) ?? fallback.ssidPrefix
+        // A build before this one stored the invented default. Drop it, so
+        // the camera's own answer replaces it rather than sitting behind it.
+        let storedPrefix = try container.decodeIfPresent(String.self, forKey: .ssidPrefix) ?? ""
+        ssidPrefix = storedPrefix == "CAR-WA7053" ? "" : storedPrefix
         lastSeenEventID = try container.decodeIfPresent(String.self, forKey: .lastSeenEventID)
         autoSaveNewEvents = try container.decodeIfPresent(Bool.self, forKey: .autoSaveNewEvents) ?? false
         homeSSID = try container.decodeIfPresent(String.self, forKey: .homeSSID)
@@ -150,6 +156,15 @@ final class AppState {
     /// replaced it. Without this, a stale run left the app looking busy and
     /// every later attempt was dropped as "already searching".
     private var discoveryGeneration = 0
+    /// True once the path monitor has reported where the phone is.
+    private var hasSeenNetwork = false
+    /// Fruitless searches in a row. Sweeping a network the camera is not on
+    /// costs seconds of radio every time, and repeating it on every return to
+    /// the foreground neither finds the camera nor tells the user anything
+    /// new, so the app stops and hands the decision back.
+    private var searchAttempts = 0
+    /// How many of those to run before waiting to be asked.
+    private let maxAutomaticSearches = 3
 
     var isSearching: Bool { discoveryTask != nil }
 
@@ -184,10 +199,24 @@ final class AppState {
         pathMonitor.start { [weak self] description in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+
+                // The monitor reports the current path as soon as it starts.
+                // That is the network the launch search is already using, not
+                // a change, and cancelling for it threw away a search that had
+                // just begun.
+                guard self.hasSeenNetwork else {
+                    self.hasSeenNetwork = true
+                    self.sink.log(.info, .network, "On \(description)")
+                    self.connectIfNeeded(reason: "the app launched")
+                    return
+                }
+
                 self.sink.log(.info, .network, "Network changed to \(description)")
-                // A sweep already running is walking the subnet the phone just
-                // left, so its result would describe the old network. Start
-                // again rather than let it finish and block the new attempt.
+                // A different network is new information: it earns a fresh
+                // search even after the app has given up on the old one, and
+                // the sweep already running is walking a subnet the phone has
+                // left.
+                self.searchAttempts = 0
                 self.cancelDiscovery(reason: "the network changed")
                 self.connectIfNeeded(reason: "the network changed")
             }
@@ -244,6 +273,14 @@ final class AppState {
                      "Not searching (\(reason)): this camera was forgotten. Use Scan again.")
             return
         }
+        guard searchAttempts < maxAutomaticSearches || connection.isConnected else {
+            sink.log(.info, .app,
+                     "Not searching (\(reason)): \(searchAttempts) searches found nothing on "
+                     + "this network. Waiting for Scan again, or for the network to change.")
+            discoveryStatus = "No camera found after \(searchAttempts) attempts. "
+                + "Join the camera's wifi, then tap Scan again."
+            return
+        }
         guard discoveryTask == nil else {
             sink.log(.debug, .app, "Already searching, ignoring: \(reason)")
             return
@@ -265,6 +302,7 @@ final class AppState {
             }
 
             self.sink.log(.info, .app, "Searching because \(reason)")
+            self.searchAttempts += 1
             await self.runDiscovery(generation: generation)
         }
     }
@@ -303,6 +341,8 @@ final class AppState {
     func rescan() {
         cancelDiscovery(reason: "you asked for a rescan")
         connection = .disconnected
+        // Asking again is the user overriding the app's decision to stop.
+        searchAttempts = 0
         // Scanning again is an explicit request, so it undoes Forget.
         remembered.autoConnectEnabled = true
         RememberedStore.save(remembered)
@@ -399,10 +439,23 @@ final class AppState {
 
         remembered.lastHost = camera.host
         remembered.autoConnectEnabled = true
+        searchAttempts = 0
         if let model = camera.model, !model.isEmpty {
             remembered.name = model
         }
         RememberedStore.save(remembered)
+
+        // Ask the camera what its own access point is called, so Connect can
+        // name it instead of guessing.
+        if let response = try? await client.send(.wifiInfo) {
+            let reported = CameraAccessPoint.parse(Data(response.raw.utf8))
+            if let ssid = reported.ssid, !ssid.isEmpty {
+                remembered.lastSSID = ssid
+                remembered.ssidPrefix = ssid
+                RememberedStore.save(remembered)
+                sink.log(.info, .app, "The camera calls its own access point \(ssid)")
+            }
+        }
 
         diagnostics.setContext("camera", camera.model ?? "unreported")
         diagnostics.setContext("firmware", camera.firmware ?? "unreported")
