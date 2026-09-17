@@ -96,9 +96,26 @@ public final class DiagnosticsLog {
     }
 
     /// Plain text for the share sheet.
+    /// Context about the app and device, so a log sent on its own still says
+    /// what produced it. Set when the app starts and on every connection.
+    public var context: [String: String] = [:]
+
+    public func setContext(_ key: String, _ value: String?) {
+        if let value, !value.isEmpty {
+            context[key] = value
+        } else {
+            context.removeValue(forKey: key)
+        }
+    }
+
     public func exportText() -> String {
         let stamp = Date().formatted(date: .abbreviated, time: .standard)
-        var out = "FitCamXtra diagnostics\nExported \(stamp)\n\n"
+        var out = "FitCamXtra diagnostics\nExported \(stamp)\n"
+        for key in context.keys.sorted() {
+            out += "\(key.padding(toLength: 12, withPad: " ", startingAt: 0)) \(context[key] ?? "")\n"
+        }
+        out += "\(entries.count) entries\n\n"
+
         for entry in entries {
             out += Self.line(for: entry)
             if let detail = entry.detail, !detail.isEmpty {
@@ -111,6 +128,20 @@ public final class DiagnosticsLog {
             out += "\n"
         }
         return out
+    }
+
+    /// Writes the log to a real file so the share sheet offers Mail, Files and
+    /// AirDrop properly. Sharing a long string instead lands it inline in a
+    /// message body, which is unusable at a few hundred entries.
+    public func exportFile() throws -> URL {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd-HHmm"
+        let name = "FitCamXtra-diagnostics-\(formatter.string(from: Date())).txt"
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try exportText().write(to: url, atomically: true, encoding: .utf8)
+        return url
     }
 
     static func line(for entry: LogEntry) -> String {

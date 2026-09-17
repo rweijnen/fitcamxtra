@@ -8,6 +8,9 @@ struct DiagnosticsView: View {
 
     @State private var showDetail = false
     @State private var minimumLevel: LogLevel = .debug
+    @State private var share: SharePayload?
+    @State private var copied = false
+    @State private var exportFailure: String?
 
     /// Newest first, because the last thing that happened is the thing you
     /// opened this screen to read.
@@ -22,6 +25,14 @@ struct DiagnosticsView: View {
             VStack(spacing: 0) {
                 header
                 filterBar
+
+                if let exportFailure {
+                    Text(exportFailure)
+                        .font(Typo.mono(11))
+                        .foregroundStyle(Palette.destructiveText)
+                        .padding(.horizontal, Metrics.gutter)
+                        .padding(.bottom, 8)
+                }
 
                 if entries.isEmpty {
                     VStack(spacing: 8) {
@@ -46,6 +57,9 @@ struct DiagnosticsView: View {
                 }
             }
         }
+        .sheet(item: $share) { payload in
+            ShareSheet(items: [payload.url])
+        }
     }
 
     private var header: some View {
@@ -64,11 +78,33 @@ struct DiagnosticsView: View {
 
             Spacer()
 
-            ShareLink(item: state.diagnostics.exportText()) {
+            Button {
+                UIPasteboard.general.string = state.diagnostics.exportText()
+                copied = true
+                Task {
+                    try? await Task.sleep(for: .seconds(1.6))
+                    copied = false
+                }
+            } label: {
+                Text(copied ? "Copied" : "Copy")
+                    .font(Typo.sans(13.5, .semibold))
+                    .foregroundStyle(Palette.accent)
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 14)
+
+            Button {
+                do {
+                    share = SharePayload(url: try state.diagnostics.exportFile())
+                } catch {
+                    exportFailure = error.localizedDescription
+                }
+            } label: {
                 Image(systemName: "square.and.arrow.up")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Palette.accent)
             }
+            .buttonStyle(.plain)
 
             Button {
                 state.diagnostics.clear()

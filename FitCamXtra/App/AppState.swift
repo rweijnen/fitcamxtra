@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 /// Everything the app remembers about the camera between launches.
 /// No credentials are ever stored: the SSID prefix is a matching hint only.
@@ -153,6 +154,7 @@ final class AppState {
     /// Called once at launch. From then on the app reconnects by itself when
     /// the network changes or it returns to the foreground.
     func startAutoConnect() {
+        recordEnvironment()
         sink.log(.info, .app, "App started, watching for network changes")
         pathMonitor.start { [weak self] description in
             Task { @MainActor [weak self] in
@@ -162,6 +164,18 @@ final class AppState {
             }
         }
         connectIfNeeded(reason: "the app launched")
+    }
+
+    /// Stamps the export header, so a log sent on its own still says which
+    /// build and which device produced it.
+    private func recordEnvironment() {
+        let bundle = Bundle.main.infoDictionary
+        let version = bundle?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = bundle?["CFBundleVersion"] as? String ?? "?"
+        let device = UIDevice.current
+        diagnostics.setContext("app", "FitCamXtra \(version) (\(build))")
+        diagnostics.setContext("ios", "\(device.systemName) \(device.systemVersion)")
+        diagnostics.setContext("device", device.model)
     }
 
     func onForeground() {
@@ -284,6 +298,9 @@ final class AppState {
         }
         RememberedStore.save(remembered)
 
+        diagnostics.setContext("camera", camera.model ?? "unreported")
+        diagnostics.setContext("firmware", camera.firmware ?? "unreported")
+        diagnostics.setContext("address", camera.host)
         sink.log(.info, .app, "Connected to \(camera.host) via \(camera.foundBy.label)")
         settings.attach(client: client)
         library.attach(client: client, host: camera.host)
