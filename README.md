@@ -6,7 +6,9 @@ things the stock app lacks: a painless connection flow (no more fighting wireles
 CarPlay for the phone's wifi) and **station mode**, so the camera joins your home
 network instead of forcing your phone onto its access point.
 
-> Status: early. Repository scaffold and CI only; the app itself is being designed.
+> Status: early. The design is done and the foundation is in place: design system,
+> camera command layer, discovery, and the app shell with a working Live and Connect
+> screen. Events, the SD card browser, Settings and the Network mode switch are next.
 
 ## Planned features
 
@@ -24,11 +26,40 @@ no account, no telemetry.
 
 ## Building
 
-The app is built and signed with GitHub Actions on macOS runners. Signing material
-lives exclusively in repository secrets; see [docs/SIGNING.md](docs/SIGNING.md) for
-the list of secrets and how to produce them. Nothing secret is ever committed.
+The Xcode project is **generated from `project.yml` by [XcodeGen](https://github.com/yonaskolb/XcodeGen)**
+rather than committed, so the project can be maintained from a machine without Xcode.
+Generate it before opening the app locally:
 
-Local builds need Xcode 16 or newer once the project lands.
+```sh
+brew install xcodegen
+xcodegen generate
+open FitCamXtra.xcodeproj
+```
+
+CI does the same on every push, then archives and signs. Signing material lives
+exclusively in repository secrets; see [docs/SIGNING.md](docs/SIGNING.md) for the list
+and how to produce them. Nothing secret is ever committed. A build without access to
+those secrets, such as a pull request from a fork, still compiles the app unsigned.
+
+Requires Xcode 16 and iOS 17 or newer.
+
+## Layout
+
+| Path | What lives there |
+| --- | --- |
+| `FitCamXtra/Core` | Camera commands, XML replies, discovery, domain models. Deliberately free of Apple-only types so an Android port can reuse the logic. |
+| `FitCamXtra/Platform` | The Apple edge: URLSession transport and reading the phone's own subnet. |
+| `FitCamXtra/Design` | Design tokens and shared chrome. |
+| `FitCamXtra/Features` | One folder per screen. |
+
+### Finding the camera
+
+The camera announces itself on nothing: its firmware has no mDNS responder, no SSDP
+and no UDP beacon, so the phone has to look. Discovery tries the remembered address
+first, which resolves most reconnects in a single request, then derives the range from
+the phone's own interface and sweeps that subnet with every probe in flight at once.
+A `/24` resolves in a second or two. Identity comes from the camera's version reply,
+because iOS sandboxing rules out matching on MAC address.
 
 ## License
 

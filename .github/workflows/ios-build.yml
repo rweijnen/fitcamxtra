@@ -5,15 +5,11 @@ on:
     branches: [main]
     paths:
       - "FitCamXtra/**"
-      - "FitCamXtra.xcodeproj/**"
-      - "FitCamXtra.xcworkspace/**"
       - "project.yml"
       - ".github/workflows/ios-build.yml"
   pull_request:
     paths:
       - "FitCamXtra/**"
-      - "FitCamXtra.xcodeproj/**"
-      - "FitCamXtra.xcworkspace/**"
       - "project.yml"
       - ".github/workflows/ios-build.yml"
   workflow_dispatch:
@@ -42,18 +38,42 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.2.app
 
-      - name: Guard against a missing project
-        id: guard
+      - name: Install tools
+        run: brew install xcodegen xcbeautify
+
+      # The Xcode project is generated from project.yml rather than committed,
+      # so it can be maintained from a machine without Xcode.
+      - name: Generate the Xcode project
+        run: xcodegen generate --spec project.yml
+
+      # A pull request from a fork cannot read secrets. Build unsigned there so
+      # the compile is still checked, and sign only when the secrets exist.
+      - name: Decide whether we can sign
+        id: signing
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
         run: |
-          if [ ! -d "$PROJECT" ]; then
-            echo "::warning::$PROJECT not found yet; skipping build."
-            echo "present=false" >> "$GITHUB_OUTPUT"
+          if [ -n "$CERT" ]; then
+            echo "can_sign=true" >> "$GITHUB_OUTPUT"
           else
-            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Signing secrets are not available; building unsigned."
+            echo "can_sign=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Build unsigned
+        if: steps.signing.outputs.can_sign == 'false'
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -destination "generic/platform=iOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcbeautify --renderer github-actions
+
       - name: Install signing material
-        if: steps.guard.outputs.present == 'true'
+        if: steps.signing.outputs.can_sign == 'true'
         env:
           APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -83,7 +103,7 @@ jobs:
           echo "PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
 
       - name: Archive
-        if: steps.guard.outputs.present == 'true'
+        if: steps.signing.outputs.can_sign == 'true'
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
@@ -101,7 +121,7 @@ jobs:
             | xcbeautify --renderer github-actions
 
       - name: Export IPA
-        if: steps.guard.outputs.present == 'true'
+        if: steps.signing.outputs.can_sign == 'true'
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
@@ -126,7 +146,7 @@ jobs:
             | xcbeautify --renderer github-actions
 
       - name: Upload IPA
-        if: steps.guard.outputs.present == 'true'
+        if: steps.signing.outputs.can_sign == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: FitCamXtra-ipa
