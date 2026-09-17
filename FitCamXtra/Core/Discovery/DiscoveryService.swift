@@ -14,6 +14,14 @@ public struct DiscoveredCamera: Sendable, Equatable {
         case subnetSweep
         /// The user typed the address.
         case manual
+
+        public var label: String {
+            switch self {
+            case .cachedAddress: return "remembered address"
+            case .subnetSweep: return "subnet sweep"
+            case .manual: return "manual entry"
+            }
+        }
     }
 }
 
@@ -46,6 +54,7 @@ public protocol NetworkInterfaceProviding: Sendable {
 public actor DiscoveryService {
     private let transport: CameraTransport
     private let interfaces: NetworkInterfaceProviding
+    private let sink: LogSink?
 
     /// Per-probe timeout during the sweep. Long enough for a busy embedded
     /// HTTP server on the same wifi, short enough to keep the sweep quick.
@@ -55,9 +64,14 @@ public actor DiscoveryService {
     /// The cached address gets longer, because a hit here ends discovery.
     public var cachedAddressTimeout: TimeInterval = 1.5
 
-    public init(transport: CameraTransport, interfaces: NetworkInterfaceProviding) {
+    public init(
+        transport: CameraTransport,
+        interfaces: NetworkInterfaceProviding,
+        sink: LogSink? = nil
+    ) {
         self.transport = transport
         self.interfaces = interfaces
+        self.sink = sink
     }
 
     /// Full discovery run. `onProgress` is called as work advances.
@@ -65,38 +79,65 @@ public actor DiscoveryService {
         cachedHost: String?,
         onProgress: (@Sendable (DiscoveryProgress) -> Void)? = nil
     ) async -> DiscoveredCamera? {
+        let started = Date()
+        sink?.log(.info, .discovery, "Discovery started")
+
         // 1. The remembered address.
         if let cachedHost, !cachedHost.isEmpty {
             onProgress?(.tryingCachedAddress(cachedHost))
+            sink?.log(.info, .discovery, "Trying remembered address \(cachedHost)")
             if let camera = await probe(host: cachedHost, timeout: cachedAddressTimeout, source: .cachedAddress) {
+                sink?.log(.info, .discovery, "Camera answered at \(cachedHost)", detail: describe(camera))
                 onProgress?(.found(camera))
                 return camera
             }
+            sink?.log(.info, .discovery, "Remembered address did not answer; sweeping")
+        } else {
+            sink?.log(.info, .discovery, "No remembered address")
         }
 
         // 2. The phone's own subnet, so we never guess a range.
         guard let subnet = interfaces.currentWiFiSubnet() else {
-            onProgress?(.finishedWithoutResult)
-            return nil
-        }
-
-        // 3. Concurrent sweep.
-        let targets = subnet.scanTargets().filter { $0.description != cachedHost }
-        guard !targets.isEmpty else {
+            sink?.log(.error, .discovery,
+                      "No IPv4 wifi interface found. The phone is probably not on wifi.")
             onProgress?(.finishedWithoutResult)
             return nil
         }
 
         let label = "\(subnet.address)/\(subnet.scanPrefixLength)"
+        sink?.log(.info, .discovery,
+                  "Phone is \(subnet.address), scanning \(label)",
+                  detail: "netmask prefix \(subnet.prefixLength), gateway guess "
+                        + (subnet.gateway.map(String.init(describing:)) ?? "none"))
+
+        // 3. Concurrent sweep.
+        let targets = subnet.scanTargets().filter { $0.description != cachedHost }
+        guard !targets.isEmpty else {
+            sink?.log(.warning, .discovery, "Nothing to scan on \(label)")
+            onProgress?(.finishedWithoutResult)
+            return nil
+        }
+
         onProgress?(.sweeping(subnet: label, probed: 0, total: targets.count))
+        sink?.log(.info, .discovery,
+                  "Sweeping \(targets.count) addresses, \(maxConcurrentProbes) at a time, "
+                  + "\(Int(probeTimeout * 1000)) ms each")
 
         let found = await sweep(targets: targets) { probed in
             onProgress?(.sweeping(subnet: label, probed: probed, total: targets.count))
         }
 
+        let elapsed = String(format: "%.1f", Date().timeIntervalSince(started))
         if let found {
+            sink?.log(.info, .discovery,
+                      "Found the camera at \(found.host) after \(elapsed)s",
+                      detail: describe(found))
             onProgress?(.found(found))
         } else {
+            sink?.log(.warning, .discovery,
+                      "No camera answered on \(label) after \(elapsed)s. "
+                      + "Check the phone is on the camera's wifi and that the "
+                      + "local network permission was allowed.")
             onProgress?(.finishedWithoutResult)
         }
         return found
@@ -109,13 +150,21 @@ public actor DiscoveryService {
         source: DiscoveredCamera.Source = .manual
     ) async -> DiscoveredCamera? {
         let request = CameraRequest(.version)
-        guard let url = URL(string: "http://\(host)\(request.path())") else { return nil }
+        guard let url = URL(string: "http://\(host)\(request.path())") else {
+            sink?.log(.error, .discovery, "\(host) is not a usable address")
+            return nil
+        }
 
         do {
             let data = try await transport.get(url: url, timeout: timeout ?? probeTimeout)
             let response = try CameraResponseParser.parse(data)
             let version = CameraVersion(response: response)
-            guard version.looksLikeFitCamX else { return nil }
+            guard version.looksLikeFitCamX else {
+                sink?.log(.debug, .discovery,
+                          "\(host) answered but is not the camera",
+                          detail: String(response.raw.prefix(400)))
+                return nil
+            }
             return DiscoveredCamera(
                 host: host,
                 model: version.model,
@@ -123,8 +172,27 @@ public actor DiscoveryService {
                 foundBy: source
             )
         } catch {
+            if source != .subnetSweep {
+                sink?.log(.info, .discovery, "\(host) did not answer: \(describe(error))")
+            }
             return nil
         }
+    }
+
+    private func describe(_ camera: DiscoveredCamera) -> String {
+        """
+        host      \(camera.host)
+        model     \(camera.model ?? "unreported")
+        firmware  \(camera.firmware ?? "unreported")
+        found by  \(camera.foundBy.label)
+        """
+    }
+
+    private nonisolated func describe(_ error: Error) -> String {
+        if let cameraError = error as? CameraError {
+            return cameraError.errorDescription ?? "\(cameraError)"
+        }
+        return error.localizedDescription
     }
 
     /// Runs every probe concurrently, capped by `maxConcurrentProbes`, and

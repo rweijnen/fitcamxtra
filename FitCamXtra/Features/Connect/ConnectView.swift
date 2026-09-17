@@ -191,11 +191,12 @@ struct ConnectView: View {
 
     private var footer: some View {
         HStack {
-            Button("Scan again") {
-                Task { await state.discover() }
+            Button(state.isSearching ? "Searching..." : "Scan again") {
+                state.rescan()
             }
             .font(Typo.sans(13.5, .semibold))
             .foregroundStyle(Palette.accent)
+            .disabled(state.isSearching)
 
             Spacer()
 

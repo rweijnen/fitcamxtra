@@ -74,16 +74,75 @@ final class AppState {
     var sdCardPercentUsed: Int?
     var batteryPercent: Int?
 
+    /// The in-app record of what actually happened. Nothing is sent anywhere.
+    let diagnostics: DiagnosticsLog
+
     private let transport: CameraTransport
     private let discovery: DiscoveryService
+    private let pathMonitor = NetworkPathMonitor()
+    private let sink: LogSink
     private var client: CameraClient?
     private var tickTask: Task<Void, Never>?
+    private var discoveryTask: Task<Void, Never>?
+
+    var isSearching: Bool { discoveryTask != nil }
 
     init(transport: CameraTransport = URLSessionTransport(),
          interfaces: NetworkInterfaceProviding = NetworkInterfaceProvider()) {
+        let log = DiagnosticsLog()
+        let sink = DiagnosticsSink(log)
+        self.diagnostics = log
+        self.sink = sink
         self.transport = transport
-        self.discovery = DiscoveryService(transport: transport, interfaces: interfaces)
+        self.discovery = DiscoveryService(transport: transport, interfaces: interfaces, sink: sink)
         self.remembered = RememberedStore.load() ?? .default
+    }
+
+    // MARK: - Automatic connection
+
+    /// Called once at launch. From then on the app reconnects by itself when
+    /// the network changes or it returns to the foreground.
+    func startAutoConnect() {
+        sink.log(.info, .app, "App started, watching for network changes")
+        pathMonitor.start { [weak self] description in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.sink.log(.info, .network, "Network changed to \(description)")
+                self.connectIfNeeded(reason: "the network changed")
+            }
+        }
+        connectIfNeeded(reason: "the app launched")
+    }
+
+    func onForeground() {
+        connectIfNeeded(reason: "the app came to the foreground")
+    }
+
+    /// Starts a search unless one is already running. When already connected it
+    /// first checks the current camera is still answering, which is one request
+    /// rather than a whole sweep.
+    func connectIfNeeded(reason: String) {
+        guard discoveryTask == nil else {
+            sink.log(.debug, .app, "Already searching, ignoring: \(reason)")
+            return
+        }
+
+        discoveryTask = Task { @MainActor [weak self] in
+            defer { self?.discoveryTask = nil }
+            guard let self else { return }
+
+            if let camera = self.connection.camera {
+                if await self.discovery.probe(host: camera.host, timeout: 1.5, source: .cachedAddress) != nil {
+                    self.sink.log(.debug, .app, "Still connected to \(camera.host)")
+                    return
+                }
+                self.sink.log(.warning, .app, "Lost \(camera.host), searching again")
+                self.connection = .disconnected
+            }
+
+            self.sink.log(.info, .app, "Searching because \(reason)")
+            await self.runDiscovery()
+        }
     }
 
     var unreadCount: Int { unreadEventIDs.count }
@@ -95,7 +154,15 @@ final class AppState {
 
     // MARK: - Discovery
 
-    func discover() async {
+    /// Manual "Scan again". Forces a search even when one looks unnecessary.
+    func rescan() {
+        discoveryTask?.cancel()
+        discoveryTask = nil
+        connection = .disconnected
+        connectIfNeeded(reason: "you asked for a rescan")
+    }
+
+    private func runDiscovery() async {
         connection = .searching("Looking for the camera")
         discoveryStatus = nil
 
@@ -138,18 +205,25 @@ final class AppState {
     }
 
     func connect(to camera: DiscoveredCamera) async {
-        let client = CameraClient(host: camera.host, transport: transport)
+        let client = CameraClient(host: camera.host, transport: transport, sink: sink)
         self.client = client
         connection = .connected(camera)
         discoveryStatus = nil
 
         remembered.lastHost = camera.host
+        if let model = camera.model, !model.isEmpty {
+            remembered.name = model
+        }
         RememberedStore.save(remembered)
 
+        sink.log(.info, .app, "Connected to \(camera.host) via \(camera.foundBy.label)")
         await refreshStatus()
     }
 
     func forgetCamera() {
+        sink.log(.info, .app, "Forgetting the camera")
+        discoveryTask?.cancel()
+        discoveryTask = nil
         client = nil
         connection = .disconnected
         stopTicking()

@@ -192,12 +192,14 @@ struct LiveView: View {
             VStack(spacing: 12) {
                 Eyebrow(text: "No camera", color: Palette.destructiveText, tracking: 1.32)
 
-                Text("Not connected to the camera")
+                Text(state.isSearching ? "Looking for the camera" : "Not connected to the camera")
                     .font(Typo.sans(21, .semibold))
                     .foregroundStyle(Palette.ink)
                     .multilineTextAlignment(.center)
 
-                Text("The camera records to its card regardless. Reconnect to watch live, pull events, or change settings.")
+                Text(state.isSearching
+                     ? "Join the camera's wifi and this will find it by itself."
+                     : "The camera records to its card regardless. Reconnect to watch live, pull events, or change settings.")
                     .font(Typo.sans(14))
                     .foregroundStyle(Palette.inkSecondary)
                     .multilineTextAlignment(.center)
@@ -207,6 +209,7 @@ struct LiveView: View {
                     Text(status)
                         .font(Typo.mono(11))
                         .foregroundStyle(Palette.inkQuaternary)
+                        .multilineTextAlignment(.center)
                         .padding(.top, 2)
                 }
 

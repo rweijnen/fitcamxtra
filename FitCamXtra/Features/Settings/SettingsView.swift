@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(AppState.self) private var state
+    @State private var showDiagnostics = false
 
     var body: some View {
         ScrollView {
@@ -26,6 +27,10 @@ struct SettingsView: View {
                         row("Wi-Fi name", value: state.remembered.lastSSID ?? "Unknown")
                         divider
                         row("SSID prefix", value: state.remembered.ssidPrefix)
+                        divider
+                        row("Diagnostics", value: "\(state.diagnostics.entries.count) entries") {
+                            showDiagnostics = true
+                        }
                     }
                     .cardSurface()
                 }
@@ -40,6 +45,9 @@ struct SettingsView: View {
             .padding(.bottom, Metrics.scrollBottom)
         }
         .background(Palette.bg)
+        .sheet(isPresented: $showDiagnostics) {
+            DiagnosticsView()
+        }
     }
 
     private var cameraCard: some View {

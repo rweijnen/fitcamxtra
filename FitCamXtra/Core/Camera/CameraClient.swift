@@ -11,11 +11,18 @@ public actor CameraClient {
     public private(set) var host: String
     private let transport: CameraTransport
     private let defaultTimeout: TimeInterval
+    private let sink: LogSink?
 
-    public init(host: String, transport: CameraTransport, defaultTimeout: TimeInterval = 6.0) {
+    public init(
+        host: String,
+        transport: CameraTransport,
+        defaultTimeout: TimeInterval = 6.0,
+        sink: LogSink? = nil
+    ) {
         self.host = host
         self.transport = transport
         self.defaultTimeout = defaultTimeout
+        self.sink = sink
     }
 
     public func retarget(host newHost: String) {
@@ -29,16 +36,34 @@ public actor CameraClient {
     @discardableResult
     public func send(_ request: CameraRequest, timeout: TimeInterval? = nil) async throws -> CameraResponse {
         guard let url = url(for: request) else { throw CameraError.notReachable }
-        let data = try await transport.get(url: url, timeout: timeout ?? defaultTimeout)
-        let response = try CameraResponseParser.parse(data)
+        let name = "cmd=\(request.command.rawValue) (\(request.command))"
+        let started = Date()
 
-        if response.isCommandUnsupported {
-            throw CameraError.commandUnsupported(command: request.command.rawValue)
+        do {
+            let data = try await transport.get(url: url, timeout: timeout ?? defaultTimeout)
+            let response = try CameraResponseParser.parse(data)
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+
+            if response.isCommandUnsupported {
+                sink?.log(.warning, .http, "\(name) not supported by this camera",
+                          detail: String(response.raw.prefix(600)))
+                throw CameraError.commandUnsupported(command: request.command.rawValue)
+            }
+            if let status = response.status, status != 0 {
+                sink?.log(.warning, .http, "\(name) returned status \(status)",
+                          detail: String(response.raw.prefix(600)))
+                throw CameraError.commandFailed(command: request.command.rawValue, status: status)
+            }
+
+            sink?.log(.debug, .http, "\(name) ok in \(ms) ms",
+                      detail: String(response.raw.prefix(600)))
+            return response
+        } catch let error as CameraError {
+            throw error
+        } catch {
+            sink?.log(.error, .http, "\(name) failed: \(error.localizedDescription)")
+            throw error
         }
-        if let status = response.status, status != 0 {
-            throw CameraError.commandFailed(command: request.command.rawValue, status: status)
-        }
-        return response
     }
 
     @discardableResult
