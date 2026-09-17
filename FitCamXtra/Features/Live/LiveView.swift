@@ -126,6 +126,19 @@ struct LiveView: View {
         .glass()
     }
 
+    /// Why nothing is on screen. After a Forget the app is deliberately not
+    /// looking, and saying so beats leaving someone to wonder why opening the
+    /// app does nothing.
+    private var disconnectedExplanation: String {
+        if state.isSearching {
+            return "Join the camera's wifi and this will find it by itself."
+        }
+        if !state.remembered.autoConnectEnabled {
+            return "You forgot this camera, so the app is not looking for it. Connect to look again."
+        }
+        return "The camera records to its card regardless. Reconnect to watch live, pull events, or change settings."
+    }
+
     private var statusChips: some View {
         HStack(spacing: 6) {
             Button {
@@ -249,9 +262,7 @@ struct LiveView: View {
                     .foregroundStyle(Palette.ink)
                     .multilineTextAlignment(.center)
 
-                Text(state.isSearching
-                     ? "Join the camera's wifi and this will find it by itself."
-                     : "The camera records to its card regardless. Reconnect to watch live, pull events, or change settings.")
+                Text(disconnectedExplanation)
                     .font(Typo.sans(14))
                     .foregroundStyle(Palette.inkSecondary)
                     .multilineTextAlignment(.center)

@@ -57,6 +57,9 @@ struct ConnectView: View {
                 .padding(.bottom, 40)
             }
         }
+        .task {
+            state.searchBecauseConnectOpened()
+        }
     }
 
     private var header: some View {

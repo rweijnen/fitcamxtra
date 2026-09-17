@@ -306,6 +306,23 @@ final class AppState {
         }
     }
 
+    /// The discovery sheet is only ever opened by a tap, so opening it is a
+    /// request to look now. It overrides both the attempt cap and Forget:
+    /// those exist to stop the app searching on its own, not to stop the
+    /// person asking. Without this the app sat inert on every launch after a
+    /// Forget, with the reason visible only in the log.
+    func searchBecauseConnectOpened() {
+        guard !connection.isConnected, discoveryTask == nil else { return }
+
+        if !remembered.autoConnectEnabled {
+            remembered.autoConnectEnabled = true
+            RememberedStore.save(remembered)
+            sink.log(.info, .app, "Opening Connect undoes Forget: looking again")
+        }
+        searchAttempts = 0
+        connectIfNeeded(reason: "you opened Connect")
+    }
+
     var unreadCount: Int { library.unreadEventIDs.count }
 
     /// True once a camera has actually been connected. Drives whether the app
