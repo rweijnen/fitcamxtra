@@ -26,9 +26,6 @@ final class VideoRenderer {
 
     init() {
         displayLayer.videoGravity = .resizeAspect
-        if #available(iOS 17.0, *) {
-            displayLayer.sampleBufferRenderer.requiresFlushToResumeDecoding = false
-        }
     }
 
     func reset() {
