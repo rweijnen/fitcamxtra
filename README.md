@@ -1,5 +1,7 @@
 # FitCamXtra
 
+![AI assisted](https://img.shields.io/badge/AI-assisted-blue)
+
 A focused, modern iOS companion app for the FitCamX wifi dashcam. It replaces the
 multi-brand stock app with something clean, dark and one-handed, and adds the two
 things the stock app lacks: a painless connection flow (no more fighting wireless
