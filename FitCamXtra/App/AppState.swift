@@ -13,6 +13,9 @@ struct RememberedCamera: Codable, Equatable {
     /// The home network the camera was last told to join. The passphrase is
     /// deliberately not kept: it goes to the camera and nowhere else.
     var homeSSID: String?
+    /// Cleared by Forget. Without this the sweep finds the camera again within
+    /// seconds and forgetting looks like it did nothing.
+    var autoConnectEnabled: Bool
 
     static let `default` = RememberedCamera(
         name: "car-cam-cx7053DW",
@@ -21,8 +24,45 @@ struct RememberedCamera: Codable, Equatable {
         ssidPrefix: "CAR-WA7053",
         lastSeenEventID: nil,
         autoSaveNewEvents: false,
-        homeSSID: nil
+        homeSSID: nil,
+        autoConnectEnabled: true
     )
+
+    init(
+        name: String,
+        lastHost: String?,
+        lastSSID: String?,
+        ssidPrefix: String,
+        lastSeenEventID: String?,
+        autoSaveNewEvents: Bool,
+        homeSSID: String?,
+        autoConnectEnabled: Bool
+    ) {
+        self.name = name
+        self.lastHost = lastHost
+        self.lastSSID = lastSSID
+        self.ssidPrefix = ssidPrefix
+        self.lastSeenEventID = lastSeenEventID
+        self.autoSaveNewEvents = autoSaveNewEvents
+        self.homeSSID = homeSSID
+        self.autoConnectEnabled = autoConnectEnabled
+    }
+
+    /// Decoded field by field with defaults. The synthesised decoder fails
+    /// outright on a key added in a later build, which would silently discard
+    /// everything the app had remembered.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let fallback = RememberedCamera.default
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? fallback.name
+        lastHost = try container.decodeIfPresent(String.self, forKey: .lastHost)
+        lastSSID = try container.decodeIfPresent(String.self, forKey: .lastSSID)
+        ssidPrefix = try container.decodeIfPresent(String.self, forKey: .ssidPrefix) ?? fallback.ssidPrefix
+        lastSeenEventID = try container.decodeIfPresent(String.self, forKey: .lastSeenEventID)
+        autoSaveNewEvents = try container.decodeIfPresent(Bool.self, forKey: .autoSaveNewEvents) ?? false
+        homeSSID = try container.decodeIfPresent(String.self, forKey: .homeSSID)
+        autoConnectEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoConnectEnabled) ?? true
+    }
 }
 
 enum AppTab: Hashable {
@@ -129,6 +169,11 @@ final class AppState {
     /// first checks the current camera is still answering, which is one request
     /// rather than a whole sweep.
     func connectIfNeeded(reason: String) {
+        guard remembered.autoConnectEnabled else {
+            sink.log(.info, .app,
+                     "Not searching (\(reason)): this camera was forgotten. Use Scan again.")
+            return
+        }
         guard discoveryTask == nil else {
             sink.log(.debug, .app, "Already searching, ignoring: \(reason)")
             return
@@ -166,6 +211,9 @@ final class AppState {
         discoveryTask?.cancel()
         discoveryTask = nil
         connection = .disconnected
+        // Scanning again is an explicit request, so it undoes Forget.
+        remembered.autoConnectEnabled = true
+        RememberedStore.save(remembered)
         connectIfNeeded(reason: "you asked for a rescan")
     }
 
@@ -218,6 +266,7 @@ final class AppState {
         discoveryStatus = nil
 
         remembered.lastHost = camera.host
+        remembered.autoConnectEnabled = true
         if let model = camera.model, !model.isEmpty {
             remembered.name = model
         }
@@ -298,7 +347,10 @@ final class AppState {
         isRecording = false
         elapsedSeconds = 0
         remembered.lastHost = nil
+        remembered.lastSSID = nil
+        remembered.autoConnectEnabled = false
         RememberedStore.save(remembered)
+        sink.log(.info, .app, "Camera forgotten. Auto-connect is off until you scan again.")
     }
 
     // MARK: - Status

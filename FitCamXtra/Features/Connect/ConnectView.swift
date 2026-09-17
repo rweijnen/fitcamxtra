@@ -8,6 +8,7 @@ struct ConnectView: View {
     @State private var manualAddress = ""
     @State private var manualFailed = false
     @State private var isTesting = false
+    @State private var showForgetConfirm = false
 
     var body: some View {
         ZStack {
@@ -22,7 +23,7 @@ struct ConnectView: View {
                         .tracking(-0.9)
                         .foregroundStyle(Palette.ink)
 
-                    Text("Looking on your wifi and for the camera's own network. No account, nothing leaves the car.")
+                    Text("Looking on your wifi and for the camera's own network.")
                         .font(Typo.sans(14))
                         .foregroundStyle(Palette.inkSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -190,23 +191,44 @@ struct ConnectView: View {
     }
 
     private var footer: some View {
-        HStack {
-            Button(state.isSearching ? "Searching..." : "Scan again") {
-                state.rescan()
+        VStack(alignment: .leading, spacing: 10) {
+            if !state.remembered.autoConnectEnabled {
+                Text("Forgotten. The app will not look for this camera until you scan again.")
+                    .font(Typo.mono(10.5))
+                    .foregroundStyle(Palette.accentText)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .font(Typo.sans(13.5, .semibold))
-            .foregroundStyle(Palette.accent)
-            .disabled(state.isSearching)
 
-            Spacer()
+            HStack {
+                Button(state.isSearching ? "Searching..." : "Scan again") {
+                    state.rescan()
+                }
+                .font(Typo.sans(13.5, .semibold))
+                .foregroundStyle(Palette.accent)
+                .disabled(state.isSearching)
 
-            Button("Forget this camera") {
-                state.forgetCamera()
+                Spacer()
+
+                Button("Forget this camera") {
+                    showForgetConfirm = true
+                }
+                .font(Typo.sans(13.5, .semibold))
+                .foregroundStyle(Palette.destructiveText)
             }
-            .font(Typo.sans(13.5, .semibold))
-            .foregroundStyle(Palette.destructiveText)
         }
         .padding(.top, 6)
+        .confirmationDialog(
+            "Forget this camera?",
+            isPresented: $showForgetConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Forget this camera", role: .destructive) {
+                state.forgetCamera()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The app stops looking for it and forgets its address. Nothing on the camera changes.")
+        }
     }
 
     private func testAndSave() async {
