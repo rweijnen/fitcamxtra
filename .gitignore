@@ -1,0 +1,49 @@
+# --- Private / never commit ---------------------------------------------
+private/
+DESIGN_BRIEF.md
+*.env
+.env*
+secrets/
+*.p12
+*.p8
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile
+AuthKey_*.p8
+ExportOptions.local.plist
+*.keychain
+*.keychain-db
+
+# --- Xcode / Swift -------------------------------------------------------
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.xcarchive
+*.xcresult
+.build/
+.swiftpm/
+!*.xcodeproj/project.pbxproj
+!*.xcodeproj/xcshareddata/
+!*.xcworkspace/contents.xcworkspacedata
+
+# --- Tools ---------------------------------------------------------------
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output
+Pods/
+Carthage/Build/
+
+# --- OS / editor ---------------------------------------------------------
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
