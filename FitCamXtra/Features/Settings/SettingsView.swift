@@ -126,7 +126,11 @@ struct SettingsView: View {
                          value: state.settings.accessPoint?.ssid ?? state.remembered.lastSSID ?? "Not reported",
                          action: nil)
                 divider
-                plainRow("SSID prefix", value: state.remembered.ssidPrefix, action: nil)
+                plainRow("Access point",
+                         value: state.remembered.ssidPrefix.isEmpty
+                             ? "Not reported yet"
+                             : state.remembered.ssidPrefix,
+                         action: nil)
                 divider
                 plainRow("Diagnostics", value: "\(state.diagnostics.entries.count) entries") {
                     showDiagnostics = true

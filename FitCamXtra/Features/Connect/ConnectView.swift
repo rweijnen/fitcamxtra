@@ -159,7 +159,9 @@ struct ConnectView: View {
                 .font(Typo.sans(15, .semibold))
                 .foregroundStyle(Palette.ink)
 
-            Text("Open Settings, then Wi-Fi, and pick the network starting with \(state.remembered.ssidPrefix). Come back here and the app finds the camera by itself. Your phone has no internet while on the camera's wifi, which is expected.")
+            Text(state.remembered.ssidPrefix.isEmpty
+                 ? "Open Settings, then Wi-Fi, and join the camera's own network. Its name is printed on the camera; this app will remember it once you have connected. Come back here and the app finds the camera by itself. Your phone has no internet while on the camera's wifi, which is expected."
+                 : "Open Settings, then Wi-Fi, and pick \(state.remembered.ssidPrefix). Come back here and the app finds the camera by itself. Your phone has no internet while on the camera's wifi, which is expected.")
                 .font(Typo.sans(13))
                 .foregroundStyle(Palette.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -311,7 +311,11 @@ struct NetworkView: View {
 
             if showAdvanced {
                 VStack(alignment: .leading, spacing: 8) {
-                    statusRow("SSID prefix", state.remembered.ssidPrefix, mono: true)
+                    statusRow("Access point",
+                              state.remembered.ssidPrefix.isEmpty
+                                  ? "not reported yet"
+                                  : state.remembered.ssidPrefix,
+                              mono: true)
                     statusRow("Reserved IP", "recommended", mono: true)
                     Text("Give the camera a fixed lease in your router. The app tries the remembered address first on every launch, so a stable address makes reconnecting instant.")
                         .font(Typo.mono(10.5))
