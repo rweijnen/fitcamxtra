@@ -86,20 +86,41 @@ public struct IPv4Subnet: Sendable, Equatable {
         return (1 << bits) - 2
     }
 
-    /// Every host worth probing: the subnet minus network, broadcast, the
-    /// phone itself and the gateway.
+    /// Every host worth probing: the subnet minus the network address, the
+    /// broadcast address and the phone itself.
+    ///
+    /// The gateway is deliberately **not** excluded. On the camera's own access
+    /// point the camera *is* the gateway, so skipping it would skip the very
+    /// device we are looking for. Likely addresses are ordered first instead,
+    /// which costs nothing and usually ends the sweep on the first result.
     public func scanTargets() -> [IPv4Address] {
         let bits = 32 - scanPrefixLength
         guard bits > 1, bits <= 8 else { return [] }
         let network = scanNetwork
         let total = UInt32(1) << UInt32(bits)
+        let last = total - 1
 
+        // Ordered by how often a camera or router sits there: the gateway we
+        // inferred, then the high address this model uses on its own AP, then
+        // the usual router address.
+        var preferred: [UInt32] = []
+        if let gateway { preferred.append(gateway.raw) }
+        preferred.append(network | (last - 1))   // .254 on a /24
+        preferred.append(network | 1)            // .1 on a /24
+
+        var seen = Set<UInt32>([network, network | last, address.raw])
         var targets: [IPv4Address] = []
         targets.reserveCapacity(Int(total))
-        for offset in 1..<(total - 1) {
+
+        for candidate in preferred where !seen.contains(candidate) {
+            guard candidate > network, candidate < network | last else { continue }
+            seen.insert(candidate)
+            targets.append(IPv4Address(raw: candidate))
+        }
+
+        for offset in 1..<last {
             let candidate = network | offset
-            if candidate == address.raw { continue }
-            if let gateway, candidate == gateway.raw { continue }
+            if seen.contains(candidate) { continue }
             targets.append(IPv4Address(raw: candidate))
         }
         return targets

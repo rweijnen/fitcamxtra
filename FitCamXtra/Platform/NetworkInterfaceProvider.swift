@@ -6,8 +6,8 @@ import Darwin
 ///
 /// iOS gives an app its own interface addresses but not the ARP table and not
 /// the default route, so the gateway is inferred rather than read. It is only
-/// used to skip one address during a sweep, and a wrong guess costs one extra
-/// probe.
+/// used to probe one address early, never to exclude one, so a wrong guess
+/// costs nothing but ordering.
 public struct NetworkInterfaceProvider: NetworkInterfaceProviding {
     /// en0 is wifi on iPhone. Others are listed for the simulator and for
     /// hotspot or wired adapters.
@@ -68,7 +68,7 @@ public struct NetworkInterfaceProvider: NetworkInterfaceProviding {
     }
 
     /// Router convention, not a fact: the first host address on the subnet.
-    /// Only ever used to skip a probe.
+    /// Only ever used to order probes.
     private static func likelyGateway(address: IPv4Address, mask: IPv4Address) -> IPv4Address? {
         let network = address.raw & mask.raw
         let candidate = network | 1
