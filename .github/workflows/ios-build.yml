@@ -245,7 +245,11 @@ jobs:
           TIMEOUT_SECONDS: "1800"
         run: |
           set -euo pipefail
-          python3 -m pip install --quiet --disable-pip-version-check pyjwt cryptography
+          # The runner's python is Homebrew's and refuses to install into
+          # itself (PEP 668), so the two dependencies go in a throwaway venv.
+          VENV="$RUNNER_TEMP/testflight-venv"
+          python3 -m venv "$VENV"
+          "$VENV/bin/pip" install --quiet --disable-pip-version-check pyjwt cryptography
           KEY_DIR="$HOME/.appstoreconnect/private_keys"
           export APP_STORE_CONNECT_KEY_PATH="$KEY_DIR/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
           python3 scripts/testflight_notes.py
