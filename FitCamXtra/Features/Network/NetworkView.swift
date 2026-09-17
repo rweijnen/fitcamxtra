@@ -180,7 +180,7 @@ struct NetworkView: View {
                     .foregroundStyle(Palette.destructiveText)
             }
 
-            Text("Stock firmware forgets station mode on every power cycle and the camera comes back up as its own access point. FitCamXtra re-applies the switch each time it reconnects, so day to day it works, but the camera is only truly on your wifi at boot with the patched firmware.")
+            Text("Stock firmware forgets station mode on every power cycle and comes back up as its own access point. This app does not re-apply it for you, because it does not keep your wifi passphrase. Until the firmware is patched, joining your network again means coming back to this screen after each power cycle.")
                 .font(Typo.sans(12.5))
                 .foregroundStyle(Palette.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
