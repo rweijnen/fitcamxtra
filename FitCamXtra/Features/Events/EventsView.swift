@@ -2,6 +2,9 @@ import SwiftUI
 
 struct EventsView: View {
     @Environment(AppState.self) private var state
+    @State private var openEvent: CameraEvent?
+
+    private var library: MediaLibrary { state.library }
 
     var body: some View {
         ScrollView {
@@ -38,17 +41,30 @@ struct EventsView: View {
                 }
                 .buttonStyle(.plain)
 
-                if state.events.isEmpty {
+                if library.isLoadingEvents && library.events.isEmpty {
+                    loading
+                } else if library.events.isEmpty {
                     NotBuiltYet(
                         eyebrow: "Event list",
                         headline: state.connection.isConnected
                             ? "No locked clips on the card"
                             : "Connect to pull the event list",
-                        detail: "Events come from the camera's locked-clip list. The incident bundle view, which pulls the neighbouring loop segments, is the next screen to build."
+                        detail: state.connection.isConnected
+                            ? "Press the button on the camera, or let the G-sensor fire, and the clip it protects appears here."
+                            : "Events come from the camera's locked-clip list, so the app has to be connected to read them."
                     )
                 } else {
-                    ForEach(state.events) { event in
-                        EventCard(event: event, isUnread: state.unreadEventIDs.contains(event.id))
+                    ForEach(library.events) { event in
+                        Button {
+                            openEvent = event
+                        } label: {
+                            EventCard(
+                                event: event,
+                                isUnread: library.unreadEventIDs.contains(event.id),
+                                downloader: state.downloader
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
 
@@ -62,25 +78,59 @@ struct EventsView: View {
             .padding(.bottom, Metrics.scrollBottom)
         }
         .background(Palette.bg)
+        .refreshable {
+            await library.loadEvents(lastSeenID: state.remembered.lastSeenEventID)
+        }
+        .onAppear { state.markEventsSeen() }
+        .fullScreenCover(item: $openEvent) { event in
+            IncidentView(event: event)
+        }
+    }
+
+    private var loading: some View {
+        HStack(spacing: 10) {
+            ProgressView().tint(Palette.accent)
+            Text("Reading the card")
+                .font(Typo.mono(11.5))
+                .foregroundStyle(Palette.inkQuaternary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
     }
 
     private var subtitle: String {
-        let locked = state.events.count
-        let new = state.unreadCount
-        if locked == 0 { return "Nothing pulled yet" }
-        return "\(locked) locked clips - \(new) new since last connect"
+        guard !library.events.isEmpty else {
+            return state.connection.isConnected ? "Nothing locked yet" : "Not connected"
+        }
+        let locked = library.events.count
+        let new = library.unreadEventIDs.count
+        let clips = locked == 1 ? "1 locked clip" : "\(locked) locked clips"
+        return new > 0 ? "\(clips) - \(new) new since last connect" : clips
     }
 }
 
 struct EventCard: View {
     let event: CameraEvent
     let isUnread: Bool
+    let downloader: MediaDownloader
+
+    @State private var thumbnail: UIImage?
 
     var body: some View {
         VStack(spacing: 0) {
             ZStack(alignment: .topLeading) {
-                CameraPlaceholder()
-                    .frame(height: 132)
+                Group {
+                    if let thumbnail {
+                        Image(uiImage: thumbnail)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        CameraPlaceholder()
+                    }
+                }
+                .frame(height: 132)
+                .frame(maxWidth: .infinity)
+                .clipped()
 
                 HStack(spacing: 6) {
                     HStack(spacing: 5) {
@@ -129,11 +179,20 @@ struct EventCard: View {
         .cardSurface()
         .clipShape(RoundedRectangle(cornerRadius: Metrics.Radius.card, style: .continuous))
         .fixedSize(horizontal: false, vertical: true)
+        .task {
+            thumbnail = await downloader.thumbnail(for: MediaFile(
+                id: event.id,
+                path: event.path,
+                recordedAt: event.recordedAt,
+                byteCount: 0,
+                kind: .video,
+                isLocked: true
+            ))
+        }
     }
 }
 
-/// Honest empty state for the screens still to be built. It says what is
-/// missing rather than showing invented content.
+/// Honest empty state, used where a screen genuinely has nothing to show.
 struct NotBuiltYet: View {
     let eyebrow: String
     let headline: String

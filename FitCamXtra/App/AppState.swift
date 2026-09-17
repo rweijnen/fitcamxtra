@@ -103,13 +103,6 @@ final class AppState {
     var isImmersive = false
     var snapshotToastVisible = false
 
-    // Events
-    var events: [CameraEvent] = []
-    var unreadEventIDs: Set<String> = []
-
-    // Card
-    var files: [MediaFile] = []
-
     // Chrome
     var tab: AppTab = .live
     var isConnectSheetPresented = false
@@ -124,6 +117,10 @@ final class AppState {
     let settings: SettingsStore
     /// The live RTSP view.
     let liveStream: LiveStream
+    /// What is on the card: locked events and the full listing.
+    let library: MediaLibrary
+    /// Downloads, thumbnails and saving to Photos.
+    let downloader: MediaDownloader
 
     private let transport: CameraTransport
     private let discovery: DiscoveryService
@@ -143,6 +140,9 @@ final class AppState {
         self.sink = sink
         self.settings = SettingsStore(sink: sink)
         self.liveStream = LiveStream(sink: sink)
+        let downloader = MediaDownloader(sink: sink)
+        self.downloader = downloader
+        self.library = MediaLibrary(sink: sink, downloads: downloader)
         self.transport = transport
         self.discovery = DiscoveryService(transport: transport, interfaces: interfaces, sink: sink)
         self.remembered = RememberedStore.load() ?? .default
@@ -200,7 +200,16 @@ final class AppState {
         }
     }
 
-    var unreadCount: Int { unreadEventIDs.count }
+    var unreadCount: Int { library.unreadEventIDs.count }
+
+    /// Called when the Events tab is opened, so the badge clears.
+    func markEventsSeen() {
+        guard let newest = library.markEventsSeen() else { return }
+        remembered.lastSeenEventID = newest
+        RememberedStore.save(remembered)
+    }
+
+    func cameraClient() -> CameraClient? { client }
 
     /// Launch lands on Events when something is new, otherwise Live.
     func landingTab() -> AppTab {
@@ -277,7 +286,9 @@ final class AppState {
 
         sink.log(.info, .app, "Connected to \(camera.host) via \(camera.foundBy.label)")
         settings.attach(client: client)
+        library.attach(client: client, host: camera.host)
         await refreshStatus()
+        await library.loadEvents(lastSeenID: remembered.lastSeenEventID)
     }
 
     // MARK: - Network mode
@@ -345,6 +356,7 @@ final class AppState {
         discoveryTask = nil
         client = nil
         settings.attach(client: nil)
+        library.attach(client: nil, host: nil)
         liveStream.stop()
         connection = .disconnected
         stopTicking()
