@@ -5,18 +5,23 @@ public struct CameraEvent: Sendable, Identifiable, Equatable {
     public enum Trigger: Sendable, Equatable {
         case buttonPress
         case gSensor
+        /// The listing says a clip is locked but not what locked it, which is
+        /// the normal case on this firmware.
+        case unknown
 
         public var label: String {
             switch self {
             case .buttonPress: return "Button press"
             case .gSensor: return "G-sensor"
+            case .unknown: return "Locked clip"
             }
         }
     }
 
     public let id: String
-    public let recordedAt: Date
-    public let duration: TimeInterval
+    /// Nil when the camera's listing carried no readable timestamp.
+    public let recordedAt: Date?
+    public let duration: TimeInterval?
     public let trigger: Trigger
     public let path: String
     public let note: String?
@@ -24,8 +29,8 @@ public struct CameraEvent: Sendable, Identifiable, Equatable {
 
     public init(
         id: String,
-        recordedAt: Date,
-        duration: TimeInterval,
+        recordedAt: Date?,
+        duration: TimeInterval?,
         trigger: Trigger,
         path: String,
         note: String? = nil,
@@ -40,11 +45,11 @@ public struct CameraEvent: Sendable, Identifiable, Equatable {
         self.isLocked = isLocked
     }
 
-    public var title: String {
-        switch trigger {
-        case .buttonPress: return "Button press"
-        case .gSensor: return "G-sensor - hard brake"
-        }
+    public var title: String { trigger.label }
+
+    public var timeLabel: String {
+        guard let recordedAt else { return "Time not reported" }
+        return recordedAt.formatted(date: .abbreviated, time: .shortened)
     }
 }
 
@@ -57,7 +62,10 @@ public struct MediaFile: Sendable, Identifiable, Equatable {
 
     public let id: String
     public let path: String
-    public let recordedAt: Date
+    /// Nil when the listing carried no readable timestamp. Never filled in
+    /// with the current time: that would scramble day grouping and the
+    /// matching of neighbouring clips.
+    public let recordedAt: Date?
     public let byteCount: Int64
     public let kind: Kind
     public let duration: TimeInterval?
@@ -68,7 +76,7 @@ public struct MediaFile: Sendable, Identifiable, Equatable {
     public init(
         id: String,
         path: String,
-        recordedAt: Date,
+        recordedAt: Date?,
         byteCount: Int64,
         kind: Kind,
         duration: TimeInterval? = nil,
@@ -124,12 +132,12 @@ public struct IncidentBundle: Sendable, Equatable {
         }
 
         public let id: String
-        public let startedAt: Date
+        public let startedAt: Date?
         public let duration: TimeInterval
         public let role: Role
         public let file: MediaFile?
 
-        public init(id: String, startedAt: Date, duration: TimeInterval, role: Role, file: MediaFile? = nil) {
+        public init(id: String, startedAt: Date?, duration: TimeInterval, role: Role, file: MediaFile? = nil) {
             self.id = id
             self.startedAt = startedAt
             self.duration = duration
@@ -159,31 +167,40 @@ public struct IncidentBundle: Sendable, Equatable {
         files: [MediaFile],
         segmentLength: TimeInterval = 60
     ) -> IncidentBundle {
+        let lockedFile = files.first { $0.path == event.path }
         var segments: [Segment] = [
             Segment(
                 id: event.id,
                 startedAt: event.recordedAt,
-                duration: event.duration,
+                duration: event.duration ?? lockedFile?.duration ?? segmentLength,
                 role: .locked,
-                file: files.first { $0.path == event.path }
+                file: lockedFile
             )
         ]
 
-        let tolerance = segmentLength / 2
+        // Neighbours are matched by start time. With no timestamp there is no
+        // way to tell which clip sits next to this one, so the bundle stays
+        // the locked clip alone rather than becoming a guess.
+        guard let anchor = event.recordedAt, range.neighbourCount > 0 else {
+            return IncidentBundle(event: event, segments: segments)
+        }
 
-        for step in 1...max(range.neighbourCount, 1) where range.neighbourCount >= step {
-            let beforeStart = event.recordedAt.addingTimeInterval(-segmentLength * Double(step))
-            if let match = nearest(to: beforeStart, in: files, tolerance: tolerance) {
+        let tolerance = segmentLength / 2
+        for step in 1...range.neighbourCount {
+            let before = anchor.addingTimeInterval(-segmentLength * Double(step))
+            if let match = nearest(to: before, in: files, tolerance: tolerance, excluding: event.path) {
                 segments.insert(
-                    Segment(id: match.id, startedAt: match.recordedAt, duration: match.duration ?? segmentLength, role: .before, file: match),
+                    Segment(id: match.id, startedAt: match.recordedAt,
+                            duration: match.duration ?? segmentLength, role: .before, file: match),
                     at: 0
                 )
             }
 
-            let afterStart = event.recordedAt.addingTimeInterval(segmentLength * Double(step))
-            if let match = nearest(to: afterStart, in: files, tolerance: tolerance) {
+            let after = anchor.addingTimeInterval(segmentLength * Double(step))
+            if let match = nearest(to: after, in: files, tolerance: tolerance, excluding: event.path) {
                 segments.append(
-                    Segment(id: match.id, startedAt: match.recordedAt, duration: match.duration ?? segmentLength, role: .after, file: match)
+                    Segment(id: match.id, startedAt: match.recordedAt,
+                            duration: match.duration ?? segmentLength, role: .after, file: match)
                 )
             }
         }
@@ -191,10 +208,18 @@ public struct IncidentBundle: Sendable, Equatable {
         return IncidentBundle(event: event, segments: segments)
     }
 
-    private static func nearest(to date: Date, in files: [MediaFile], tolerance: TimeInterval) -> MediaFile? {
-        files
-            .filter { $0.kind == .video }
-            .min { abs($0.recordedAt.timeIntervalSince(date)) < abs($1.recordedAt.timeIntervalSince(date)) }
-            .flatMap { abs($0.recordedAt.timeIntervalSince(date)) <= tolerance ? $0 : nil }
+    private static func nearest(
+        to date: Date,
+        in files: [MediaFile],
+        tolerance: TimeInterval,
+        excluding path: String
+    ) -> MediaFile? {
+        let candidates = files.filter {
+            $0.kind == .video && $0.path != path && $0.recordedAt != nil
+        }
+        guard let best = candidates.min(by: {
+            abs($0.recordedAt!.timeIntervalSince(date)) < abs($1.recordedAt!.timeIntervalSince(date))
+        }) else { return nil }
+        return abs(best.recordedAt!.timeIntervalSince(date)) <= tolerance ? best : nil
     }
 }

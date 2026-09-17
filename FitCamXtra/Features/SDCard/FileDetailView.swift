@@ -82,7 +82,7 @@ struct FileDetailView: View {
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(file.recordedAt.formatted(date: .abbreviated, time: .shortened))
+                Text(file.recordedAt?.formatted(date: .abbreviated, time: .shortened) ?? "Date not reported")
                     .font(Typo.sans(15, .semibold))
                     .foregroundStyle(Palette.ink)
                 Text(file.displayName)

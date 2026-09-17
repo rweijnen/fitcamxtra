@@ -38,7 +38,9 @@ public enum FileListParser {
         guard !name.isEmpty else { return nil }
 
         let size = node.value("size", "fsize", "length").flatMap { Int64($0.filter(\.isNumber)) } ?? 0
-        let date = node.value("time", "date", "timecode", "ctime").flatMap(parseDate) ?? Date()
+        // No readable timestamp means unknown, never the current time.
+        let date = node.value("time", "date", "timecode", "ctime").flatMap(parseDate)
+            ?? parseDate(name)
         let duration = node.value("duration", "playtime", "time_len").flatMap(parseDuration)
 
         // The attribute field carries the protect bit on these builds. Treat
@@ -132,6 +134,11 @@ extension MediaFile {
     /// The event view groups by the minute the clip started.
     public var displayName: String {
         path.split(separator: "/").last.map(String.init) ?? path
+    }
+
+    public var timeLabel: String {
+        guard let recordedAt else { return "time not reported" }
+        return recordedAt.formatted(date: .omitted, time: .shortened)
     }
 
     public var sizeLabel: String {

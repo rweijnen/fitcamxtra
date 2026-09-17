@@ -5,6 +5,8 @@ import UIKit
 /// Everything the app remembers about the camera between launches.
 /// No credentials are ever stored: the SSID prefix is a matching hint only.
 struct RememberedCamera: Codable, Equatable {
+    /// Set from what the camera reports. Empty until one has been connected,
+    /// so nothing invents a device that is not there.
     var name: String
     var lastHost: String?
     var lastSSID: String?
@@ -19,7 +21,7 @@ struct RememberedCamera: Codable, Equatable {
     var autoConnectEnabled: Bool
 
     static let `default` = RememberedCamera(
-        name: "car-cam-cx7053DW",
+        name: "",
         lastHost: nil,
         lastSSID: nil,
         ssidPrefix: "CAR-WA7053",
@@ -55,7 +57,7 @@ struct RememberedCamera: Codable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let fallback = RememberedCamera.default
-        name = try container.decodeIfPresent(String.self, forKey: .name) ?? fallback.name
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
         lastHost = try container.decodeIfPresent(String.self, forKey: .lastHost)
         lastSSID = try container.decodeIfPresent(String.self, forKey: .lastSSID)
         ssidPrefix = try container.decodeIfPresent(String.self, forKey: .ssidPrefix) ?? fallback.ssidPrefix
@@ -103,6 +105,7 @@ final class AppState {
     var elapsedSeconds = 0
     var isImmersive = false
     var snapshotToastVisible = false
+    var snapshotMessage = ""
 
     // Chrome
     var tab: AppTab = .live
@@ -215,6 +218,18 @@ final class AppState {
     }
 
     var unreadCount: Int { library.unreadEventIDs.count }
+
+    /// True once a camera has actually been connected. Drives whether the app
+    /// offers to forget one.
+    var hasRememberedCamera: Bool {
+        remembered.lastHost != nil || !remembered.name.isEmpty
+    }
+
+    /// What to call the camera, or nil when none is known.
+    var cameraName: String? {
+        if let model = connection.camera?.model, !model.isEmpty { return model }
+        return remembered.name.isEmpty ? nil : remembered.name
+    }
 
     /// Called when the Events tab is opened, so the badge clears.
     func markEventsSeen() {
@@ -401,6 +416,13 @@ final class AppState {
             let recording = (response.int("status") ?? 0) == 1
             setRecording(recording, elapsed: response.int("duration") ?? 0)
         }
+        if let response = try? await client.send(.wifiName) {
+            let ssid = response.string("string") ?? response.string("value") ?? response.string("name")
+            if let ssid, !ssid.isEmpty, Int(ssid) == nil {
+                remembered.lastSSID = ssid
+                RememberedStore.save(remembered)
+            }
+        }
         if let response = try? await client.send(.wifiInfo) {
             if let mode = response.int("mode"), let parsed = NetworkMode(rawValue: mode) {
                 networkMode = parsed
@@ -423,7 +445,12 @@ final class AppState {
 
     func takeSnapshot() async {
         guard let client else { return }
-        _ = try? await client.send(.takePhoto)
+        do {
+            try await client.send(.takePhoto)
+            snapshotMessage = "Snapshot saved to the camera's card"
+        } catch {
+            snapshotMessage = "The camera refused the snapshot"
+        }
         snapshotToastVisible = true
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.8))

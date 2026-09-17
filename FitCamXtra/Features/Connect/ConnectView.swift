@@ -77,7 +77,7 @@ struct ConnectView: View {
             HStack(spacing: 12) {
                 Circle().fill(Palette.accent).frame(width: 10, height: 10)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(camera.model ?? state.remembered.name)
+                    Text(state.cameraName ?? camera.host)
                         .font(Typo.sans(15, .semibold))
                         .foregroundStyle(Palette.ink)
                     Text("\(state.networkMode.label) - \(camera.host)")
@@ -215,11 +215,13 @@ struct ConnectView: View {
 
                 Spacer()
 
-                Button("Forget this camera") {
-                    showForgetConfirm = true
+                if state.hasRememberedCamera {
+                    Button("Forget this camera") {
+                        showForgetConfirm = true
+                    }
+                    .font(Typo.sans(13.5, .semibold))
+                    .foregroundStyle(Palette.destructiveText)
                 }
-                .font(Typo.sans(13.5, .semibold))
-                .foregroundStyle(Palette.destructiveText)
             }
         }
         .padding(.top, 6)

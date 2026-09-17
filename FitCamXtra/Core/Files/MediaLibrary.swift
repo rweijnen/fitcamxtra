@@ -46,17 +46,26 @@ final class MediaLibrary {
 
             let parsed = FileListParser.parse(Data(response.raw.utf8))
                 .filter { $0.kind == .video }
-                .sorted { $0.recordedAt > $1.recordedAt }
+                .sorted(by: MediaLibrary.newestFirst)
 
+            // The listing says a clip is locked, never what locked it, so the
+            // trigger stays unknown rather than claiming a button press.
             events = parsed.map { file in
                 CameraEvent(
                     id: file.id,
                     recordedAt: file.recordedAt,
-                    duration: file.duration ?? 60,
-                    trigger: .buttonPress,
+                    duration: file.duration,
+                    trigger: .unknown,
                     path: file.path,
                     isLocked: true
                 )
+            }
+
+            let undated = parsed.filter { $0.recordedAt == nil }.count
+            if undated > 0 {
+                sink.log(.warning, .app,
+                         "\(undated) of \(parsed.count) locked clips carried no readable timestamp, "
+                         + "so their neighbouring clips cannot be matched")
             }
 
             // Anything newer than the last event we showed counts as new.
@@ -88,17 +97,10 @@ final class MediaLibrary {
         defer { isLoadingFiles = false }
 
         do {
-            let response = try await client.send(.allConfigValues, par: nil)
-            _ = response
-        } catch {
-            // Not fatal; the listing below is the real source.
-        }
-
-        do {
             let response = try await client.send(.eventFileList, par: 0)
             sink.log(.info, .app, "File list fetched", detail: String(response.raw.prefix(2000)))
             let parsed = FileListParser.parse(Data(response.raw.utf8))
-                .sorted { $0.recordedAt > $1.recordedAt }
+                .sorted(by: MediaLibrary.newestFirst)
             if !parsed.isEmpty {
                 files = parsed
                 sink.log(.info, .app, "\(files.count) files on the card")
@@ -112,14 +114,35 @@ final class MediaLibrary {
         }
     }
 
-    /// Files grouped by day, newest day first.
-    func filesByDay(filter: FileFilter) -> [(day: Date, files: [MediaFile])] {
+    /// Newest first, with anything the camera gave no timestamp for sorted
+    /// last rather than being treated as brand new.
+    static func newestFirst(_ a: MediaFile, _ b: MediaFile) -> Bool {
+        switch (a.recordedAt, b.recordedAt) {
+        case let (x?, y?): return x > y
+        case (nil, _?): return false
+        case (_?, nil): return true
+        case (nil, nil): return a.path > b.path
+        }
+    }
+
+    /// Files grouped by day, newest day first. A day of nil holds the files
+    /// whose timestamp could not be read.
+    func filesByDay(filter: FileFilter) -> [(day: Date?, files: [MediaFile])] {
         let calendar = Calendar.current
         let filtered = files.filter(filter.matches)
-        let grouped = Dictionary(grouping: filtered) { calendar.startOfDay(for: $0.recordedAt) }
+        let grouped = Dictionary(grouping: filtered) { file in
+            file.recordedAt.map { calendar.startOfDay(for: $0) }
+        }
         return grouped
-            .map { (day: $0.key, files: $0.value.sorted { $0.recordedAt > $1.recordedAt }) }
-            .sorted { $0.day > $1.day }
+            .map { (day: $0.key, files: $0.value.sorted(by: MediaLibrary.newestFirst)) }
+            .sorted { lhs, rhs in
+                switch (lhs.day, rhs.day) {
+                case let (x?, y?): return x > y
+                case (nil, _?): return false
+                case (_?, nil): return true
+                case (nil, nil): return false
+                }
+            }
     }
 
     var totalBytes: Int64 { files.reduce(0) { $0 + $1.byteCount } }

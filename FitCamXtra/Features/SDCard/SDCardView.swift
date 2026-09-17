@@ -25,7 +25,7 @@ struct SDCardView: View {
                     if library.isLoadingFiles && library.files.isEmpty {
                         loading
                     } else if library.files.isEmpty {
-                        NotBuiltYet(
+                        EmptyStateCard(
                             eyebrow: "Card",
                             headline: state.connection.isConnected
                                 ? "Nothing on the card yet"
@@ -180,7 +180,7 @@ struct SDCardView: View {
 
     // MARK: - Grid
 
-    private func dayGroup(_ day: Date, files: [MediaFile]) -> some View {
+    private func dayGroup(_ day: Date?, files: [MediaFile]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(dayLabel(day))
@@ -299,7 +299,8 @@ struct SDCardView: View {
 
     // MARK: - Formatting
 
-    private func dayLabel(_ day: Date) -> String {
+    private func dayLabel(_ day: Date?) -> String {
+        guard let day else { return "Date not reported" }
         let calendar = Calendar.current
         if calendar.isDateInToday(day) { return "Today" }
         if calendar.isDateInYesterday(day) { return "Yesterday" }
@@ -369,7 +370,7 @@ struct FileTile: View {
                 }
                 Spacer()
                 HStack {
-                    Text(file.recordedAt.formatted(date: .omitted, time: .shortened))
+                    Text(file.timeLabel)
                         .font(Typo.mono(9.5, .semibold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 4)

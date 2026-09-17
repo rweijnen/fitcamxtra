@@ -44,7 +44,7 @@ struct EventsView: View {
                 if library.isLoadingEvents && library.events.isEmpty {
                     loading
                 } else if library.events.isEmpty {
-                    NotBuiltYet(
+                    EmptyStateCard(
                         eyebrow: "Event list",
                         headline: state.connection.isConnected
                             ? "No locked clips on the card"
@@ -164,7 +164,7 @@ struct EventCard: View {
                     Text(event.title)
                         .font(Typo.sans(15, .semibold))
                         .foregroundStyle(Palette.ink)
-                    Text(event.recordedAt.formatted(date: .abbreviated, time: .shortened))
+                    Text(event.timeLabel)
                         .font(Typo.sans(12))
                         .foregroundStyle(Palette.inkQuaternary)
                 }
@@ -192,8 +192,8 @@ struct EventCard: View {
     }
 }
 
-/// Honest empty state, used where a screen genuinely has nothing to show.
-struct NotBuiltYet: View {
+/// Honest empty state: says what is missing rather than showing invented content.
+struct EmptyStateCard: View {
     let eyebrow: String
     let headline: String
     let detail: String

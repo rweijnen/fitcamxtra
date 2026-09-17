@@ -93,7 +93,7 @@ struct IncidentView: View {
             } else {
                 VStack(spacing: 4) {
                     CameraPlaceholder(
-                        caption: "locked segment \(event.recordedAt.formatted(date: .omitted, time: .shortened))",
+                        caption: "locked segment \(event.timeLabel)",
                         subcaption: "audio on"
                     )
                 }
@@ -131,7 +131,7 @@ struct IncidentView: View {
                             }
                         }
                         VStack(spacing: 2) {
-                            Text(segment.startedAt.formatted(date: .omitted, time: .shortened))
+                            Text(segment.startedAt?.formatted(date: .omitted, time: .shortened) ?? "--:--")
                                 .font(Typo.mono(10.5))
                                 .foregroundStyle(segment.role == .locked ? Palette.accent : Palette.inkSecondary)
                             Text(segment.role.label)
@@ -153,7 +153,9 @@ struct IncidentView: View {
             }
 
             if bundle.segments.count == 1 && range != .lockedOnly {
-                Text("No neighbouring clips were found on the card. They may already have been overwritten by the loop.")
+                Text(event.recordedAt == nil
+                     ? "The camera reported no timestamp for this clip, so neighbouring clips cannot be identified. Browse the card to find them by hand."
+                     : "No neighbouring clips were found on the card. They may already have been overwritten by the loop.")
                     .font(Typo.mono(10.5))
                     .foregroundStyle(Palette.accentText)
                     .fixedSize(horizontal: false, vertical: true)

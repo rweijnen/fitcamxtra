@@ -224,7 +224,7 @@ struct LiveView: View {
     private var snapshotToast: some View {
         VStack {
             Spacer()
-            Text("Snapshot saved to Photos")
+            Text(state.snapshotMessage)
                 .font(Typo.sans(13.5, .semibold))
                 .foregroundStyle(Palette.accentInk)
                 .padding(.horizontal, 16)

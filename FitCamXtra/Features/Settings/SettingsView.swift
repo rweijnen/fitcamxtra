@@ -70,9 +70,9 @@ struct SettingsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: Metrics.Radius.tile, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(state.connection.camera?.model ?? state.remembered.name)
+                    Text(state.cameraName ?? "No camera yet")
                         .font(Typo.sans(15, .semibold))
-                        .foregroundStyle(Palette.ink)
+                        .foregroundStyle(state.cameraName == nil ? Palette.inkQuaternary : Palette.ink)
                     Text(metaLine)
                         .font(Typo.mono(11))
                         .foregroundStyle(Palette.inkQuaternary)
@@ -171,9 +171,12 @@ struct SettingsView: View {
         return VStack(alignment: .leading, spacing: 8) {
             Eyebrow(text: "Danger zone")
             VStack(spacing: 0) {
-                forgetRow
-                ForEach(Array(rows.enumerated()), id: \.element.id) { _, setting in
+                if state.hasRememberedCamera {
+                    forgetRow
                     divider
+                }
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, setting in
+                    if index > 0 { divider }
                     row(setting)
                 }
             }

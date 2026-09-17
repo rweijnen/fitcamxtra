@@ -85,7 +85,7 @@ struct NetworkView: View {
             }
 
             statusRow("Mode", state.networkMode.label)
-            statusRow("SSID", state.remembered.lastSSID ?? "unknown", mono: true)
+            statusRow("SSID", state.remembered.lastSSID ?? "not reported", mono: true)
             statusRow("Address", state.connection.camera?.host ?? "unknown", mono: true)
             if let firmware = state.connection.camera?.firmware {
                 statusRow("Firmware", firmware, mono: true)
