@@ -6,6 +6,9 @@ import SwiftUI
 struct SettingRow: View {
     let setting: CameraSetting
     let value: SettingValue
+    /// Supplied by the store, because the resolution list comes from the
+    /// camera's own capability report rather than anything declared here.
+    let options: [SettingOption]
     let isPending: Bool
     let onApply: (Int) -> Void
     let onRunAction: () -> Void
@@ -95,12 +98,13 @@ struct SettingRow: View {
                 .tint(Palette.accent)
                 .disabled(!value.isEditable)
 
-            case .options(let options):
+            case .options:
                 Button {
                     showOptions = true
                 } label: {
                     HStack(spacing: 5) {
                         Text(currentLabel(options))
+                            .lineLimit(1)
                             .font(Typo.sans(13.5))
                             .foregroundStyle(Palette.inkQuaternary)
                         Image(systemName: "chevron.right")
@@ -109,7 +113,7 @@ struct SettingRow: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .disabled(!value.isEditable)
+                .disabled(!value.isEditable || options.isEmpty)
 
             case .slider(_, _, let unit, let scale):
                 if let current = value.intValue {
@@ -165,7 +169,7 @@ struct SettingRow: View {
     @ViewBuilder
     private var dialogButtons: some View {
         switch setting.kind {
-        case .options(let options):
+        case .options:
             ForEach(options) { option in
                 Button(option.label) { onApply(option.par) }
             }

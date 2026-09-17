@@ -43,14 +43,17 @@ public enum FileListParser {
             ?? parseDate(name)
         let duration = node.value("duration", "playtime", "time_len").flatMap(parseDuration)
 
-        // The attribute field carries the protect bit on these builds. Treat
-        // any of the usual spellings as authoritative and otherwise fall back
-        // to the folder convention.
+        // ATTR is the DOS file attribute byte. An ordinary loop clip comes
+        // back as 32, which is ARCHIVE alone. Protecting a clip makes it
+        // read-only, so bit 0 is the lock. Treating any non-zero ATTR as
+        // locked marked every file on the card as protected.
         let locked: Bool
-        if let attribute = node.value("attr", "lock", "protect", "locked") {
-            locked = attribute != "0" && attribute.lowercased() != "false"
+        if let attribute = node.value("attr").flatMap({ Int($0) }) {
+            locked = (attribute & 0x01) != 0
+        } else if let flag = node.value("lock", "protect", "locked") {
+            locked = flag != "0" && flag.lowercased() != "false"
         } else {
-            locked = rawPath.uppercased().contains("EVENT") || rawPath.uppercased().contains("RO")
+            locked = false
         }
 
         let kind: MediaFile.Kind = isPhoto(name) ? .photo : .video

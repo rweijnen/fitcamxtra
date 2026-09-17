@@ -6,6 +6,9 @@ public struct DiscoveredCamera: Sendable, Equatable {
     public let model: String?
     public let firmware: String?
     public let foundBy: Source
+    /// The raw cmd=3012 document. This unit reports neither model nor
+    /// firmware, so the diagnostics carry what it does send.
+    public var versionReply: String = ""
 
     public enum Source: Sendable, Equatable {
         /// The remembered address answered straight away.
@@ -231,7 +234,8 @@ public actor DiscoveryService {
                 host: host,
                 model: version.model,
                 firmware: version.firmware,
-                foundBy: source
+                foundBy: source,
+                versionReply: String(response.raw.prefix(600))
             )
         } catch {
             if source != .subnetSweep {
@@ -247,6 +251,7 @@ public actor DiscoveryService {
         model     \(camera.model ?? "unreported")
         firmware  \(camera.firmware ?? "unreported")
         found by  \(camera.foundBy.label)
+        reply     \(camera.versionReply)
         """
     }
 
@@ -316,7 +321,8 @@ public actor DiscoveryService {
                 host: host,
                 model: version.model,
                 firmware: version.firmware,
-                foundBy: .subnetSweep
+                foundBy: .subnetSweep,
+                versionReply: String(response.raw.prefix(600))
             )
         } catch {
             return nil

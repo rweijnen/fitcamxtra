@@ -19,13 +19,20 @@ public enum CameraCommand: Int, Sendable, CaseIterable {
     case watermark = 2008
     case sensorLevel = 2011
     case autoRecord = 2012
-    case recordBitrate = 2013
+    /// 2013 is named SetRecordBitrate in the dispatch table but reports
+        /// nothing and does not hold the value. The bitrate the firmware
+        /// validates against its 8000 default and 32000 ceiling is config index
+        /// 0x34, which is command 2022. Confirmed on a CAR-WA7053: cmd=3014
+        /// reports 2022 as 8000.
+    case unusedRecordBitrate = 2013
     case liveviewBitrate = 2014
     case startLive = 2015
     case recordStatus = 2016
     case takePhotoSimple = 2017
     case streamURL = 2019
-    case antiProtect = 2022
+    /// Named Config_Video_AntiProtect in the table, but it carries the
+    /// record bitrate in kbps. See the note on 2013.
+    case recordBitrate = 2022
     case verticalFlip = 2023
 
     // Device and management
@@ -63,7 +70,11 @@ public enum CameraCommand: Int, Sendable, CaseIterable {
 
     // Parking
     case batteryValue = 8005
-    case parkingDurationLimit = 8050
+
+    /// Listed as Config_Parking_DurationLimit, but it answers with a scan of
+    /// the wifi networks the camera can see. Useful: the phone cannot
+    /// enumerate networks, so this is how station mode offers a list.
+    case scanWifiNetworks = 8050
 }
 
 /// One camera request. Deliberately value-typed and transport-free so the

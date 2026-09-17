@@ -123,8 +123,8 @@ struct SDCardView: View {
                         legend("LOCKED \(byteLabel(locked))", color: Palette.accentText)
                         legend("LOOP \(byteLabel(total - locked))", color: Palette.inkQuaternary)
                         Spacer()
-                        if let used = state.sdCardPercentUsed {
-                            legend("CARD \(used)% USED", color: Palette.inkQuaternary)
+                        if state.sdCardLooksUnhealthy {
+                            legend("CARD NOT READY", color: Palette.destructiveText)
                         }
                     }
                 }

@@ -115,9 +115,17 @@ final class AppState {
     var tab: AppTab = .live
     var isConnectSheetPresented = false
 
-    // Device chips
-    var sdCardPercentUsed: Int?
-    var batteryPercent: Int?
+    // Device chips. These are raw codes, not percentages: cmd=3024 answers 1
+    // and cmd=3019 answers 5 on a healthy unit, and neither scale is known, so
+    // nothing here is rendered as a percentage.
+    var sdCardStatusCode: Int?
+    var batteryLevelCode: Int?
+
+    /// True when the card query answers anything other than its healthy value.
+    var sdCardLooksUnhealthy: Bool {
+        guard let sdCardStatusCode else { return false }
+        return sdCardStatusCode != 1
+    }
 
     /// The in-app record of what actually happened. Nothing is sent anywhere.
     let diagnostics: DiagnosticsLog
@@ -435,25 +443,36 @@ final class AppState {
         guard let client else { return }
 
         if let response = try? await client.send(.sdCardStatus) {
-            sdCardPercentUsed = response.int("percent") ?? response.int("used")
-        }
-        if let response = try? await client.send(.batteryStatus) {
-            batteryPercent = response.int("percent") ?? response.int("battery") ?? response.int("value")
-        }
-        if let response = try? await client.send(.recordStatus) {
-            let recording = (response.int("status") ?? 0) == 1
-            setRecording(recording, elapsed: response.int("duration") ?? 0)
-        }
-        if let response = try? await client.send(.wifiName) {
-            let ssid = response.string("string") ?? response.string("value") ?? response.string("name")
-            if let ssid, !ssid.isEmpty, Int(ssid) == nil {
-                remembered.lastSSID = ssid
-                RememberedStore.save(remembered)
+            sdCardStatusCode = response.int("value")
+            if sdCardLooksUnhealthy {
+                sink.log(.warning, .app, "SD card status is \(sdCardStatusCode ?? -1)")
             }
         }
-        if let response = try? await client.send(.wifiInfo) {
-            if let mode = response.int("mode"), let parsed = NetworkMode(rawValue: mode) {
+        if let response = try? await client.send(.batteryStatus) {
+            batteryLevelCode = response.int("value")
+        }
+
+        // cmd=3014 reports whether it is recording; a direct cmd=2016 answers
+        // the elapsed seconds.
+        if let response = try? await client.send(.allConfigValues) {
+            let config = CameraConfigSnapshot.parse(Data(response.raw.utf8))
+            if let mode = config.value(for: .setNetworkMode),
+               let parsed = NetworkMode(rawValue: mode) {
                 networkMode = parsed
+            }
+            let recording = (config.value(for: .recordStatus) ?? 0) == 1
+            var elapsed = 0
+            if let status = try? await client.send(.recordStatus) {
+                elapsed = status.int("value") ?? 0
+            }
+            setRecording(recording, elapsed: elapsed)
+        }
+        // cmd=3003 answers nothing useful; cmd=3029 carries the real SSID.
+        if let response = try? await client.send(.wifiInfo) {
+            let ap = CameraAccessPoint.parse(Data(response.raw.utf8))
+            if let ssid = ap.ssid, !ssid.isEmpty {
+                remembered.lastSSID = ssid
+                RememberedStore.save(remembered)
             }
         }
     }

@@ -135,11 +135,11 @@ struct LiveView: View {
             }
             .buttonStyle(.plain)
 
-            if let sd = state.sdCardPercentUsed {
-                chip("SD \(sd)%", color: Color.white.opacity(0.85))
-            }
-            if let battery = state.batteryPercent {
-                chip("\(battery)%", color: Color.white.opacity(0.85))
+            // No percentage chips: the camera answers these with codes whose
+            // scale is unknown, so a percent sign here would be invented.
+            // Card capacity is shown on the SD card screen, from the listing.
+            if state.sdCardLooksUnhealthy {
+                chip("SD?", color: Palette.destructiveText)
             }
         }
     }

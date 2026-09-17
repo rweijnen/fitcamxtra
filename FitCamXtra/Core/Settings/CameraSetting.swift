@@ -89,18 +89,15 @@ public enum SettingsRegistry {
             command: .microphone,
             kind: .toggle
         ),
+        // Options are replaced at runtime by what cmd=3030 reports, because
+        // the indices are not contiguous: a CAR-WA7053 uses 1, 7 and 10.
         CameraSetting(
             id: "resolution",
             group: .video,
             label: "Video Resolution",
             hint: "4K is upscaled from a 2K sensor, so it means bigger files and no extra detail",
             command: .recordResolution,
-            kind: .options([
-                SettingOption(0, "3840x2160"),
-                SettingOption(1, "2560x1440"),
-                SettingOption(2, "1920x1080"),
-            ]),
-            provisional: true
+            kind: .options([])
         ),
         CameraSetting(
             id: "bitrate",
@@ -108,8 +105,8 @@ public enum SettingsRegistry {
             label: "Record Bitrate",
             hint: "Higher is clearer and bigger. The stock app has no such control.",
             command: .recordBitrate,
-            // Firmware default is 8000 and the validator rejects anything above
-            // 32000, in the Novatek kbps convention.
+            // Default 8000, and Validate_UI_configuration rejects above 32000.
+            // Confirmed on hardware: cmd=3014 reports 2022 as 8000.
             kind: .slider(range: 8000...32000, step: 1000, unit: "Mbps", scale: 0.001)
         ),
         CameraSetting(
@@ -213,20 +210,6 @@ public enum SettingsRegistry {
             ]),
             provisional: true
         ),
-        CameraSetting(
-            id: "parkingduration",
-            group: .parking,
-            label: "Parking Duration Limit",
-            command: .parkingDurationLimit,
-            kind: .options([
-                SettingOption(0, "Off"),
-                SettingOption(6, "6 h"),
-                SettingOption(12, "12 h"),
-                SettingOption(24, "24 h"),
-            ]),
-            provisional: true
-        ),
-
         // MARK: General
         CameraSetting(
             id: "format",

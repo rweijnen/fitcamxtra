@@ -44,9 +44,14 @@ final class MediaLibrary {
             let response = try await client.send(.eventFileList)
             sink.log(.info, .app, "Event list fetched", detail: String(response.raw.prefix(2000)))
 
-            let parsed = FileListParser.parse(Data(response.raw.utf8))
-                .filter { $0.kind == .video }
+            // cmd=3015 returns the whole card, not an event list, so the
+            // locked clips are the ones carrying the read-only attribute.
+            let all = FileListParser.parse(Data(response.raw.utf8))
+            let parsed = all
+                .filter { $0.kind == .video && $0.isLocked }
                 .sorted(by: MediaLibrary.newestFirst)
+            sink.log(.info, .app,
+                     "\(all.count) files listed, \(parsed.count) carry the lock attribute")
 
             // The listing says a clip is locked, never what locked it, so the
             // trigger stays unknown rather than claiming a button press.

@@ -92,8 +92,7 @@ struct SettingsView: View {
     private var metaLine: String {
         var parts: [String] = []
         if let firmware = state.connection.camera?.firmware { parts.append("FW \(firmware)") }
-        if let sd = state.sdCardPercentUsed { parts.append("SD \(sd)%") }
-        if let battery = state.batteryPercent { parts.append("\(battery)%") }
+        if state.sdCardLooksUnhealthy { parts.append("SD not ready") }
         if let host = state.connection.camera?.host { parts.append(host) }
         return parts.isEmpty ? "Not connected" : parts.joined(separator: " - ")
     }
@@ -123,7 +122,9 @@ struct SettingsView: View {
                     showNetwork = true
                 }
                 divider
-                plainRow("Wi-Fi name", value: state.remembered.lastSSID ?? "Unknown", action: nil)
+                plainRow("Wi-Fi name",
+                         value: state.settings.accessPoint?.ssid ?? state.remembered.lastSSID ?? "Not reported",
+                         action: nil)
                 divider
                 plainRow("SSID prefix", value: state.remembered.ssidPrefix, action: nil)
                 divider
@@ -228,6 +229,7 @@ struct SettingsView: View {
         SettingRow(
             setting: setting,
             value: state.connection.isConnected ? state.settings.value(for: setting) : .unavailable("not connected"),
+            options: state.settings.options(for: setting),
             isPending: state.settings.pending.contains(setting.id),
             onApply: { par in
                 Task { await state.settings.apply(setting, par: par) }
