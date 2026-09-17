@@ -59,7 +59,6 @@ struct RememberedCamera: Codable, Equatable {
     /// everything the app had remembered.
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let fallback = RememberedCamera.default
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
         lastHost = try container.decodeIfPresent(String.self, forKey: .lastHost)
         lastSSID = try container.decodeIfPresent(String.self, forKey: .lastSSID)
