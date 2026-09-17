@@ -196,7 +196,7 @@ final class AppState {
 
     func takeSnapshot() async {
         guard let client else { return }
-        try? await client.send(.takePhoto)
+        _ = try? await client.send(.takePhoto)
         snapshotToastVisible = true
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(1.8))
