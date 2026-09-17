@@ -109,6 +109,7 @@ jobs:
         if: steps.signing.outputs.can_sign == 'true'
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUILD_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
           xcodebuild archive \
@@ -117,6 +118,7 @@ jobs:
             -configuration "$CONFIGURATION" \
             -destination "generic/platform=iOS" \
             -archivePath "$ARCHIVE_PATH" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             CODE_SIGN_STYLE=Manual \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             PROVISIONING_PROFILE_SPECIFIER="$PROFILE_UUID" \
