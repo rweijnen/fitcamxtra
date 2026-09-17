@@ -10,6 +10,9 @@ struct RememberedCamera: Codable, Equatable {
     var ssidPrefix: String
     var lastSeenEventID: String?
     var autoSaveNewEvents: Bool
+    /// The home network the camera was last told to join. The passphrase is
+    /// deliberately not kept: it goes to the camera and nowhere else.
+    var homeSSID: String?
 
     static let `default` = RememberedCamera(
         name: "car-cam-cx7053DW",
@@ -17,7 +20,8 @@ struct RememberedCamera: Codable, Equatable {
         lastSSID: nil,
         ssidPrefix: "CAR-WA7053",
         lastSeenEventID: nil,
-        autoSaveNewEvents: false
+        autoSaveNewEvents: false,
+        homeSSID: nil
     )
 }
 
@@ -76,6 +80,8 @@ final class AppState {
 
     /// The in-app record of what actually happened. Nothing is sent anywhere.
     let diagnostics: DiagnosticsLog
+    /// Camera settings, read from and written to the device.
+    let settings: SettingsStore
 
     private let transport: CameraTransport
     private let discovery: DiscoveryService
@@ -93,6 +99,7 @@ final class AppState {
         let sink = DiagnosticsSink(log)
         self.diagnostics = log
         self.sink = sink
+        self.settings = SettingsStore(sink: sink)
         self.transport = transport
         self.discovery = DiscoveryService(transport: transport, interfaces: interfaces, sink: sink)
         self.remembered = RememberedStore.load() ?? .default
@@ -217,7 +224,67 @@ final class AppState {
         RememberedStore.save(remembered)
 
         sink.log(.info, .app, "Connected to \(camera.host) via \(camera.foundBy.label)")
+        settings.attach(client: client)
         await refreshStatus()
+    }
+
+    // MARK: - Network mode
+
+    /// Applies the AP or station switch, then starts looking for the camera
+    /// again, because changing mode drops it off the current network.
+    func applyNetworkMode(
+        _ mode: NetworkMode,
+        ssid: String,
+        passphrase: String
+    ) async -> Result<Void, Error> {
+        guard let client else { return .failure(CameraError.notConnected) }
+
+        do {
+            switch mode {
+            case .station:
+                sink.log(.info, .network, "Switching the camera to station mode on \(ssid)")
+                try await client.applyStationMode(ssid: ssid, passphrase: passphrase)
+                remembered.homeSSID = ssid
+            case .accessPoint:
+                sink.log(.info, .network, "Switching the camera back to its own access point")
+                try await client.setNetworkMode(.accessPoint)
+                try await client.send(.saveConfig)
+                try await client.send(.rebootWifi)
+            }
+
+            networkMode = mode
+            remembered.lastHost = nil        // the address changes with the mode
+            RememberedStore.save(remembered)
+
+            // The camera restarts its wifi, so give it a moment before looking.
+            connection = .disconnected
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(6))
+                self?.connectIfNeeded(reason: "the camera changed wifi mode")
+            }
+            return .success(())
+        } catch {
+            sink.log(.error, .network, "Mode switch failed: \(error.localizedDescription)")
+            return .failure(error)
+        }
+    }
+
+    /// Runs a destructive settings action and refreshes what it affected.
+    func runDestructive(_ setting: CameraSetting) async {
+        guard case .destructiveAction(_, _, let par) = setting.kind else { return }
+        let ok = await settings.runAction(setting, par: par)
+        guard ok else { return }
+
+        if setting.command == .factoryReset {
+            // A factory reset puts the camera back on its own access point.
+            networkMode = .accessPoint
+            remembered.lastHost = nil
+            RememberedStore.save(remembered)
+            connection = .disconnected
+            connectIfNeeded(reason: "the camera was factory reset")
+        } else {
+            await refreshStatus()
+        }
     }
 
     func forgetCamera() {
@@ -225,6 +292,7 @@ final class AppState {
         discoveryTask?.cancel()
         discoveryTask = nil
         client = nil
+        settings.attach(client: nil)
         connection = .disconnected
         stopTicking()
         isRecording = false

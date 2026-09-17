@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppState.self) private var state
     @State private var showDiagnostics = false
+    @State private var showNetwork = false
 
     var body: some View {
         ScrollView {
@@ -15,61 +16,74 @@ struct SettingsView: View {
 
                 cameraCard
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Eyebrow(text: "General")
-                    VStack(spacing: 0) {
-                        row("Camera connection", value: state.connection.isConnected ? "Connected" : "Not connected") {
-                            state.isConnectSheetPresented = true
-                        }
-                        divider
-                        row("Network", value: state.networkMode.label, showChevron: true)
-                        divider
-                        row("Wi-Fi name", value: state.remembered.lastSSID ?? "Unknown")
-                        divider
-                        row("SSID prefix", value: state.remembered.ssidPrefix)
-                        divider
-                        row("Diagnostics", value: "\(state.diagnostics.entries.count) entries") {
-                            showDiagnostics = true
-                        }
-                    }
-                    .cardSurface()
+                if !state.connection.isConnected {
+                    notConnectedNote
                 }
 
-                NotBuiltYet(
-                    eyebrow: "Camera settings",
-                    headline: "The settings groups are not wired up yet",
-                    detail: "Planned: Video with the new record-bitrate slider, Advanced, Parking mode, and the destructive actions. Every row maps to a command in the firmware table, and the Network screen carries the AP to station flip."
-                )
+                generalGroup
+
+                ForEach(SettingGroup.allCases) { group in
+                    let rows = SettingsRegistry.settings(in: group)
+                    if !rows.isEmpty && group != .general {
+                        settingsGroup(group, rows: rows)
+                    }
+                }
+
+                if let error = state.settings.lastError {
+                    Text(error)
+                        .font(Typo.mono(11))
+                        .foregroundStyle(Palette.destructiveText)
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            RoundedRectangle(cornerRadius: Metrics.Radius.card, style: .continuous)
+                                .fill(Palette.destructiveBg)
+                        )
+                        .onTapGesture { state.settings.clearError() }
+                }
+
+                destructiveGroup
             }
             .padding(.horizontal, Metrics.gutter)
             .padding(.bottom, Metrics.scrollBottom)
         }
         .background(Palette.bg)
-        .sheet(isPresented: $showDiagnostics) {
-            DiagnosticsView()
+        .sheet(isPresented: $showDiagnostics) { DiagnosticsView() }
+        .sheet(isPresented: $showNetwork) { NetworkView() }
+        .task(id: state.connection.camera?.host) {
+            if state.connection.isConnected {
+                await state.settings.loadAll()
+            }
         }
     }
 
+    // MARK: - Camera card
+
     private var cameraCard: some View {
-        HStack(spacing: 12) {
-            CameraPlaceholder()
-                .frame(width: 38, height: 38)
-                .clipShape(RoundedRectangle(cornerRadius: Metrics.Radius.tile, style: .continuous))
+        Button {
+            state.isConnectSheetPresented = true
+        } label: {
+            HStack(spacing: 12) {
+                CameraPlaceholder()
+                    .frame(width: 38, height: 38)
+                    .clipShape(RoundedRectangle(cornerRadius: Metrics.Radius.tile, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(state.connection.camera?.model ?? state.remembered.name)
-                    .font(Typo.sans(15, .semibold))
-                    .foregroundStyle(Palette.ink)
-                Text(metaLine)
-                    .font(Typo.mono(11))
-                    .foregroundStyle(Palette.inkQuaternary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(state.connection.camera?.model ?? state.remembered.name)
+                        .font(Typo.sans(15, .semibold))
+                        .foregroundStyle(Palette.ink)
+                    Text(metaLine)
+                        .font(Typo.mono(11))
+                        .foregroundStyle(Palette.inkQuaternary)
+                }
+
+                Spacer()
+                DutchMark()
             }
-
-            Spacer()
-            DutchMark()
+            .padding(14)
+            .cardSurface()
         }
-        .padding(14)
-        .cardSurface()
+        .buttonStyle(.plain)
     }
 
     private var metaLine: String {
@@ -81,16 +95,111 @@ struct SettingsView: View {
         return parts.isEmpty ? "Not connected" : parts.joined(separator: " - ")
     }
 
-    private var divider: some View {
-        Rectangle()
-            .fill(Palette.divider)
-            .frame(height: 1)
+    private var notConnectedNote: some View {
+        Text("Camera settings appear once the app is connected. The rows below cannot be read or changed from here.")
+            .font(Typo.sans(13))
+            .foregroundStyle(Palette.inkSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardSurface()
     }
 
-    private func row(
+    // MARK: - Groups
+
+    private var generalGroup: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Eyebrow(text: "General")
+            VStack(spacing: 0) {
+                plainRow("Camera connection",
+                         value: state.connection.isConnected ? "Connected" : "Not connected") {
+                    state.isConnectSheetPresented = true
+                }
+                divider
+                plainRow("Network", value: state.networkMode.label) {
+                    showNetwork = true
+                }
+                divider
+                plainRow("Wi-Fi name", value: state.remembered.lastSSID ?? "Unknown", action: nil)
+                divider
+                plainRow("SSID prefix", value: state.remembered.ssidPrefix, action: nil)
+                divider
+                plainRow("Diagnostics", value: "\(state.diagnostics.entries.count) entries") {
+                    showDiagnostics = true
+                }
+            }
+            .cardSurface()
+        }
+    }
+
+    private func settingsGroup(_ group: SettingGroup, rows: [CameraSetting]) -> some View {
+        let editable = rows.filter { setting in
+            if case .destructiveAction = setting.kind { return false }
+            return true
+        }
+
+        return Group {
+            if !editable.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Eyebrow(text: group.rawValue)
+                    if let note = group.note {
+                        Text(note)
+                            .font(Typo.sans(11.5))
+                            .foregroundStyle(Palette.inkQuaternary)
+                    }
+                    VStack(spacing: 0) {
+                        ForEach(Array(editable.enumerated()), id: \.element.id) { index, setting in
+                            if index > 0 { divider }
+                            row(setting)
+                        }
+                    }
+                    .cardSurface()
+                }
+            }
+        }
+    }
+
+    private var destructiveGroup: some View {
+        let rows = SettingsRegistry.settings(in: .general).filter { setting in
+            if case .destructiveAction = setting.kind { return true }
+            return false
+        }
+
+        return VStack(alignment: .leading, spacing: 8) {
+            Eyebrow(text: "Danger zone")
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, setting in
+                    if index > 0 { divider }
+                    row(setting)
+                }
+            }
+            .cardSurface()
+        }
+    }
+
+    private func row(_ setting: CameraSetting) -> some View {
+        SettingRow(
+            setting: setting,
+            value: state.connection.isConnected ? state.settings.value(for: setting) : .unavailable("not connected"),
+            isPending: state.settings.pending.contains(setting.id),
+            onApply: { par in
+                Task { await state.settings.apply(setting, par: par) }
+            },
+            onRunAction: {
+                Task { await state.runDestructive(setting) }
+            }
+        )
+    }
+
+    // MARK: - Plumbing
+
+    private var divider: some View {
+        Rectangle().fill(Palette.divider).frame(height: 1)
+    }
+
+    private func plainRow(
         _ label: String,
         value: String,
-        showChevron: Bool = false,
         action: (() -> Void)? = nil
     ) -> some View {
         Button {
@@ -104,7 +213,7 @@ struct SettingsView: View {
                 Text(value)
                     .font(Typo.sans(13.5))
                     .foregroundStyle(Palette.inkQuaternary)
-                if showChevron || action != nil {
+                if action != nil {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Palette.inkQuaternary)
