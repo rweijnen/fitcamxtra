@@ -82,12 +82,10 @@ public struct SDPMedia: Sendable {
     public let payloadType: UInt8?
     public let encoding: String?
     public let clockRate: Int?
-    public let sps: [UInt8]?
-    public let pps: [UInt8]?
+    public let parameterSets: ParameterSets
 
-    /// True when the track is something this app can actually decode.
-    public var isH264: Bool {
-        encoding?.uppercased() == "H264"
+    public var codec: VideoCodec? {
+        encoding.flatMap(VideoCodec.init(rtpEncoding:))
     }
 }
 
@@ -99,8 +97,7 @@ public enum SDPParser {
         var payloadType: UInt8?
         var encoding: String?
         var clockRate: Int?
-        var sps: [UInt8]?
-        var pps: [UInt8]?
+        var sets = ParameterSets()
 
         for rawLine in sdp.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
@@ -133,10 +130,7 @@ public enum SDPParser {
                     if codec.count > 1 { clockRate = Int(codec[1]) }
                 }
             } else if value.hasPrefix("fmtp:") {
-                if let sets = parameterSets(in: value) {
-                    sps = sets.sps
-                    pps = sets.pps
-                }
+                sets = parameterSets(in: value)
             }
         }
 
@@ -146,23 +140,43 @@ public enum SDPParser {
             payloadType: payloadType,
             encoding: encoding,
             clockRate: clockRate,
-            sps: sps,
-            pps: pps
+            parameterSets: sets
         )
     }
 
-    /// sprop-parameter-sets=<base64 SPS>,<base64 PPS>
-    private static func parameterSets(in fmtp: String) -> (sps: [UInt8], pps: [UInt8])? {
-        guard let range = fmtp.range(of: "sprop-parameter-sets=") else { return nil }
-        let tail = fmtp[range.upperBound...]
-        let value = tail.prefix { $0 != ";" && !$0.isWhitespace }
-        let parts = value.split(separator: ",")
-        guard parts.count >= 2,
-              let spsData = Data(base64Encoded: String(parts[0])),
-              let ppsData = Data(base64Encoded: String(parts[1])),
-              !spsData.isEmpty, !ppsData.isEmpty
-        else { return nil }
-        return ([UInt8](spsData), [UInt8](ppsData))
+    /// H.264 packs both sets into one comma-separated attribute:
+    ///   `sprop-parameter-sets=<base64 SPS>,<base64 PPS>`
+    /// H.265 uses three separate ones, and needs the VPS as well:
+    ///   `sprop-vps=<b64>;sprop-sps=<b64>;sprop-pps=<b64>`
+    private static func parameterSets(in fmtp: String) -> ParameterSets {
+        var sets = ParameterSets()
+
+        if let range = fmtp.range(of: "sprop-parameter-sets=") {
+            let value = fmtp[range.upperBound...].prefix { $0 != ";" && !$0.isWhitespace }
+            let parts = value.split(separator: ",")
+            if parts.count >= 2 {
+                sets.sps = decode(String(parts[0]))
+                sets.pps = decode(String(parts[1]))
+            }
+        }
+
+        for (name, keyPath) in [
+            ("sprop-vps=", \ParameterSets.vps),
+            ("sprop-sps=", \ParameterSets.sps),
+            ("sprop-pps=", \ParameterSets.pps),
+        ] {
+            guard let range = fmtp.range(of: name) else { continue }
+            let value = fmtp[range.upperBound...].prefix { $0 != ";" && !$0.isWhitespace }
+            if let decoded = decode(String(value)) {
+                sets[keyPath: keyPath] = decoded
+            }
+        }
+        return sets
+    }
+
+    private static func decode(_ base64: String) -> [UInt8]? {
+        guard let data = Data(base64Encoded: base64), !data.isEmpty else { return nil }
+        return [UInt8](data)
     }
 }
 

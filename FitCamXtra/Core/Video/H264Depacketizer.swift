@@ -10,18 +10,6 @@ import Foundation
 /// Portable by design: it consumes bytes and produces bytes, so the Android
 /// port reuses it unchanged.
 public struct H264Depacketizer {
-    public struct NALUnit: Sendable {
-        public let bytes: [UInt8]
-        public let timestamp: UInt32
-
-        public var type: UInt8 { bytes.first.map { $0 & 0x1F } ?? 0 }
-        public var isSPS: Bool { type == 7 }
-        public var isPPS: Bool { type == 8 }
-        public var isKeyframe: Bool { type == 5 }
-        /// A unit the decoder should be handed, as opposed to parameter sets.
-        public var isVideoFrame: Bool { type == 1 || type == 5 }
-    }
-
     private var fragment: [UInt8] = []
     private var fragmentTimestamp: UInt32 = 0
     private var droppedFragment = false
@@ -31,7 +19,7 @@ public struct H264Depacketizer {
 
     public init() {}
 
-    public mutating func handle(_ packet: RTPPacket) -> [NALUnit] {
+    public mutating func handle(_ packet: RTPPacket) -> [VideoNALUnit] {
         // A gap means the current fragment can never be completed.
         if let last = lastSequence {
             let expected = last &+ 1
@@ -53,7 +41,7 @@ public struct H264Depacketizer {
 
         switch type {
         case 1...23:
-            return [NALUnit(bytes: Array(packet.payload), timestamp: packet.timestamp)]
+            return [VideoNALUnit(bytes: Array(packet.payload), timestamp: packet.timestamp, codec: .h264)]
 
         case 24:
             return stapA(packet)
@@ -69,8 +57,8 @@ public struct H264Depacketizer {
     }
 
     /// STAP-A: one byte of header, then repeated 2-byte length and NAL unit.
-    private func stapA(_ packet: RTPPacket) -> [NALUnit] {
-        var units: [NALUnit] = []
+    private func stapA(_ packet: RTPPacket) -> [VideoNALUnit] {
+        var units: [VideoNALUnit] = []
         var index = packet.payload.startIndex + 1
         let end = packet.payload.endIndex
 
@@ -78,9 +66,10 @@ public struct H264Depacketizer {
             let length = Int(packet.payload[index]) << 8 | Int(packet.payload[index + 1])
             index += 2
             guard length > 0, index + length <= end else { break }
-            units.append(NALUnit(
+            units.append(VideoNALUnit(
                 bytes: Array(packet.payload[index..<(index + length)]),
-                timestamp: packet.timestamp
+                timestamp: packet.timestamp,
+                codec: .h264
             ))
             index += length
         }
@@ -89,7 +78,7 @@ public struct H264Depacketizer {
 
     /// FU-A: indicator byte, then a header carrying start and end flags plus
     /// the real NAL type. The original header is rebuilt on the start packet.
-    private mutating func fuA(_ packet: RTPPacket, indicator: UInt8) -> [NALUnit] {
+    private mutating func fuA(_ packet: RTPPacket, indicator: UInt8) -> [VideoNALUnit] {
         guard packet.payload.count >= 2 else { return [] }
         let base = packet.payload.startIndex
         let header = packet.payload[base + 1]
@@ -118,7 +107,7 @@ public struct H264Depacketizer {
         fragment.append(contentsOf: body)
 
         if end {
-            let unit = NALUnit(bytes: fragment, timestamp: fragmentTimestamp)
+            let unit = VideoNALUnit(bytes: fragment, timestamp: fragmentTimestamp, codec: .h264)
             fragment.removeAll(keepingCapacity: true)
             return [unit]
         }

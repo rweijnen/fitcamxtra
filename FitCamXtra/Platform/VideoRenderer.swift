@@ -13,8 +13,8 @@ final class VideoRenderer {
     let displayLayer = AVSampleBufferDisplayLayer()
 
     private var formatDescription: CMVideoFormatDescription?
-    private var sps: [UInt8]?
-    private var pps: [UInt8]?
+    private var codec: VideoCodec = .h264
+    private var sets = ParameterSets()
 
     /// NAL units belonging to the frame currently being assembled. One frame
     /// can arrive as several slices sharing an RTP timestamp.
@@ -32,34 +32,36 @@ final class VideoRenderer {
         pendingNALs.removeAll()
         pendingTimestamp = nil
         formatDescription = nil
-        sps = nil
-        pps = nil
+        sets = ParameterSets()
         framesRendered = 0
         lastError = nil
         displayLayer.flushAndRemoveImage()
     }
 
-    func setParameterSets(sps newSPS: [UInt8], pps newPPS: [UInt8]) {
-        guard sps != newSPS || pps != newPPS else { return }
-        sps = newSPS
-        pps = newPPS
-        formatDescription = Self.makeFormatDescription(sps: newSPS, pps: newPPS)
-        if formatDescription == nil {
-            lastError = "The camera's parameter sets could not be read"
-        }
+    func setParameterSets(codec newCodec: VideoCodec, sets newSets: ParameterSets) {
+        guard codec != newCodec || sets != newSets else { return }
+        codec = newCodec
+        sets = newSets
+        rebuildFormatDescription()
     }
 
-    func handle(_ unit: H264Depacketizer.NALUnit) {
-        // Parameter sets can arrive in the stream as well as in the SDP.
-        if unit.isSPS {
-            setParameterSets(sps: unit.bytes, pps: pps ?? [])
-            return
-        }
-        if unit.isPPS {
-            if let currentSPS = sps {
-                setParameterSets(sps: currentSPS, pps: unit.bytes)
-            } else {
-                pps = unit.bytes
+    private func rebuildFormatDescription() {
+        guard sets.isComplete(for: codec) else { return }
+        formatDescription = Self.makeFormatDescription(codec: codec, sets: sets)
+        lastError = formatDescription == nil
+            ? "The camera's \(codec.label) parameter sets could not be read"
+            : nil
+    }
+
+    func handle(_ unit: VideoNALUnit) {
+        // Parameter sets arrive in the SDP and are repeated in the stream.
+        if unit.isParameterSet {
+            var updated = sets
+            updated.absorb(unit)
+            if updated != sets {
+                codec = unit.codec
+                sets = updated
+                rebuildFormatDescription()
             }
             return
         }
@@ -129,25 +131,55 @@ final class VideoRenderer {
 
     // MARK: - CoreMedia plumbing
 
-    private static func makeFormatDescription(sps: [UInt8], pps: [UInt8]) -> CMVideoFormatDescription? {
-        guard !sps.isEmpty, !pps.isEmpty else { return nil }
+    /// H.264 takes SPS and PPS; H.265 takes VPS, SPS and PPS in that order.
+    private static func makeFormatDescription(
+        codec: VideoCodec,
+        sets: ParameterSets
+    ) -> CMVideoFormatDescription? {
+        let ordered: [[UInt8]]
+        switch codec {
+        case .h264:
+            guard let sps = sets.sps, let pps = sets.pps else { return nil }
+            ordered = [sps, pps]
+        case .h265:
+            guard let vps = sets.vps, let sps = sets.sps, let pps = sets.pps else { return nil }
+            ordered = [vps, sps, pps]
+        }
+        guard ordered.allSatisfy({ !$0.isEmpty }) else { return nil }
+
+        // Flatten into one buffer so the pointers stay valid for the whole call.
+        var flat: [UInt8] = []
+        var offsets: [Int] = []
+        for set in ordered {
+            offsets.append(flat.count)
+            flat.append(contentsOf: set)
+        }
+        let sizes = ordered.map(\.count)
 
         var format: CMVideoFormatDescription?
-        let status = sps.withUnsafeBufferPointer { spsBuffer in
-            pps.withUnsafeBufferPointer { ppsBuffer -> OSStatus in
-                guard let spsBase = spsBuffer.baseAddress, let ppsBase = ppsBuffer.baseAddress else {
-                    return -1
-                }
-                let pointers: [UnsafePointer<UInt8>] = [spsBase, ppsBase]
-                let sizes: [Int] = [sps.count, pps.count]
-                return pointers.withUnsafeBufferPointer { pointerBuffer in
-                    sizes.withUnsafeBufferPointer { sizeBuffer in
-                        CMVideoFormatDescriptionCreateFromH264ParameterSets(
+        let status: OSStatus = flat.withUnsafeBufferPointer { buffer -> OSStatus in
+            guard let base = buffer.baseAddress else { return -1 }
+            let pointers = offsets.map { base + $0 }
+            return pointers.withUnsafeBufferPointer { pointerBuffer in
+                sizes.withUnsafeBufferPointer { sizeBuffer in
+                    switch codec {
+                    case .h264:
+                        return CMVideoFormatDescriptionCreateFromH264ParameterSets(
                             allocator: kCFAllocatorDefault,
-                            parameterSetCount: 2,
+                            parameterSetCount: pointers.count,
                             parameterSetPointers: pointerBuffer.baseAddress!,
                             parameterSetSizes: sizeBuffer.baseAddress!,
                             nalUnitHeaderLength: 4,
+                            formatDescriptionOut: &format
+                        )
+                    case .h265:
+                        return CMVideoFormatDescriptionCreateFromHEVCParameterSets(
+                            allocator: kCFAllocatorDefault,
+                            parameterSetCount: pointers.count,
+                            parameterSetPointers: pointerBuffer.baseAddress!,
+                            parameterSetSizes: sizeBuffer.baseAddress!,
+                            nalUnitHeaderLength: 4,
+                            extensions: nil,
                             formatDescriptionOut: &format
                         )
                     }

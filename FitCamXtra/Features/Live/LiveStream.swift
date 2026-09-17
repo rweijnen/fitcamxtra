@@ -41,9 +41,9 @@ final class LiveStream {
 
         Task {
             await client.start(
-                onParameterSets: { [weak self] sps, pps in
+                onParameterSets: { [weak self] codec, sets in
                     Task { @MainActor [weak self] in
-                        self?.renderer.setParameterSets(sps: sps, pps: pps)
+                        self?.renderer.setParameterSets(codec: codec, sets: sets)
                     }
                 },
                 onNAL: { [weak self] unit in

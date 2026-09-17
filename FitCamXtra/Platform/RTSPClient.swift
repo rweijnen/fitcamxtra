@@ -24,7 +24,7 @@ public actor RTSPClient {
 
     private var connection: NWConnection?
     private var reader = InterleavedFrameReader()
-    private var depacketizer = H264Depacketizer()
+    private var depacketizer: VideoDepacketizer?
 
     private var cseq = 1
     private var session: String?
@@ -34,8 +34,8 @@ public actor RTSPClient {
     private var readLoop: Task<Void, Never>?
     private var keepAlive: Task<Void, Never>?
 
-    private var onParameterSets: (@Sendable ([UInt8], [UInt8]) -> Void)?
-    private var onNAL: (@Sendable (H264Depacketizer.NALUnit) -> Void)?
+    private var onParameterSets: (@Sendable (VideoCodec, ParameterSets) -> Void)?
+    private var onNAL: (@Sendable (VideoNALUnit) -> Void)?
     private var onStateChange: (@Sendable (State) -> Void)?
 
     public init(host: String, port: UInt16 = 554, path: String = "xxx.mov", sink: LogSink? = nil) {
@@ -52,8 +52,8 @@ public actor RTSPClient {
     // MARK: - Lifecycle
 
     public func start(
-        onParameterSets: @escaping @Sendable ([UInt8], [UInt8]) -> Void,
-        onNAL: @escaping @Sendable (H264Depacketizer.NALUnit) -> Void,
+        onParameterSets: @escaping @Sendable (VideoCodec, ParameterSets) -> Void,
+        onNAL: @escaping @Sendable (VideoNALUnit) -> Void,
         onStateChange: @escaping @Sendable (State) -> Void
     ) async {
         self.onParameterSets = onParameterSets
@@ -183,7 +183,10 @@ public actor RTSPClient {
             case .rtp(let channel, let payload):
                 // Channel 0 is RTP for the first track; 1 is its RTCP.
                 guard channel == 0, let packet = RTPPacket(payload) else { continue }
-                for unit in depacketizer.handle(packet) {
+                guard var depacketizer else { continue }
+                let units = depacketizer.handle(packet)
+                self.depacketizer = depacketizer
+                for unit in units {
                     onNAL?(unit)
                 }
             }
@@ -250,14 +253,15 @@ public actor RTSPClient {
                   "RTSP video track: \(media.encoding ?? "unknown codec"), payload type \(media.payloadType.map(String.init) ?? "?")",
                   detail: describe.body)
 
-        guard media.isH264 else {
-            // H.265 uses a different RTP payload format, so decoding it would
-            // be wrong rather than merely unsupported. Say so plainly.
+        guard let codec = media.codec else {
             throw RTSPError.unsupportedCodec(media.encoding ?? "unknown")
         }
+        depacketizer = VideoDepacketizer(codec: codec)
 
-        if let sps = media.sps, let pps = media.pps {
-            onParameterSets?(sps, pps)
+        // The camera usually sends its parameter sets in the SDP, and repeats
+        // them in the stream. Either source is fine.
+        if media.parameterSets.isComplete(for: codec) {
+            onParameterSets?(codec, media.parameterSets)
         }
 
         let setup = try await perform(RTSPRequest(
