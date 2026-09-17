@@ -302,10 +302,23 @@ public actor DiscoveryService {
             return .cancelled
         }
 
-        // A busy embedded HTTP server can miss a short deadline. One slower
-        // pass costs a few seconds and is cheaper than telling someone their
-        // camera is absent when it is merely slow.
-        if found == nil {
+        // A busy embedded HTTP server can miss a short deadline, so a second,
+        // slower pass over the whole range is worth its seconds — but only
+        // where the fast pass is the only thing that has looked. The camera
+        // answers ICMP, so when the ping sweep worked, anything alive has
+        // already been probed at the long deadline by name. Repeating the
+        // whole range at 1500 ms then costs eight seconds to re-ask 250
+        // addresses that are not there. Where ping found nothing at all, that
+        // evidence is missing and the slow pass still runs.
+        let pingProvedTheRange = (living?.isEmpty == false)
+
+        if found == nil, pingProvedTheRange {
+            sink?.log(.info, .discovery,
+                      "Not repeating the range at \(Int(slowProbeTimeout * 1000)) ms: "
+                      + "the ping sweep already found everything that is alive here")
+        }
+
+        if found == nil, !pingProvedTheRange {
             sink?.log(.info, .discovery,
                       "Nothing answered in \(Int(probeTimeout * 1000)) ms; trying again at "
                       + "\(Int(slowProbeTimeout * 1000)) ms")
@@ -416,6 +429,7 @@ public actor DiscoveryService {
             var index = 0
             var completed = 0
             var tally = SweepTally()
+            tally.size = targets.count
 
             guard !Task.isCancelled else { return (nil, tally) }
 
@@ -441,8 +455,9 @@ public actor DiscoveryService {
                 case .refused(let host):
                     tally.refused += 1
                     tally.note("\(host)  refused the connection")
-                case .timedOut:
+                case .timedOut(let host):
                     tally.timedOut += 1
+                    tally.noteTimeout(host)
                 case .otherFailure(let host, let reason):
                     tally.otherFailure += 1
                     tally.note("\(host)  \(reason)")
@@ -582,7 +597,7 @@ public actor DiscoveryService {
                 versionReply: String(response.raw.prefix(600))
             ))
         } catch CameraError.timedOut {
-            return .timedOut
+            return .timedOut(host: host)
         } catch CameraError.connectionRefused {
             return .refused(host: host)
         } catch let error as CameraError {
@@ -605,7 +620,7 @@ public actor DiscoveryService {
         case camera(DiscoveredCamera)
         case answeredButNotCamera(host: String, reply: String)
         case refused(host: String)
-        case timedOut
+        case timedOut(host: String)
         case otherFailure(host: String, reason: String)
     }
 
@@ -615,7 +630,13 @@ public actor DiscoveryService {
         /// log is bounded, so this is one entry per pass rather than one per
         /// address, and it is capped in case a network is full of web servers.
         static let maxNotes = 40
+        /// Up to this many addresses, every one is named, timeouts included.
+        /// Above it a timeout is only counted: a swept /24 produces 250 of
+        /// them and they all say the same nothing.
+        static let namesEveryAddressUpTo = 16
 
+        /// How many addresses this pass covered.
+        var size = 0
         var answeredButNotCamera = 0
         var refused = 0
         var timedOut = 0
@@ -629,6 +650,11 @@ public actor DiscoveryService {
             } else {
                 droppedNotes += 1
             }
+        }
+
+        mutating func noteTimeout(_ host: String) {
+            guard size <= Self.namesEveryAddressUpTo else { return }
+            note("\(host)  no answer")
         }
 
         /// Addresses that proved the phone can reach this network at all.
