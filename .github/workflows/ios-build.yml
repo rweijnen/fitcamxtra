@@ -6,11 +6,15 @@ on:
     paths:
       - "FitCamXtra/**"
       - "project.yml"
+      - "TestFlight/**"
+      - "scripts/testflight_notes.py"
       - ".github/workflows/ios-build.yml"
   pull_request:
     paths:
       - "FitCamXtra/**"
       - "project.yml"
+      - "TestFlight/**"
+      - "scripts/testflight_notes.py"
       - ".github/workflows/ios-build.yml"
   workflow_dispatch:
 
@@ -224,7 +228,27 @@ jobs:
           xcrun altool --upload-app -f "$IPA" -t ios \
             --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
 
-          rm -f "$KEY_DIR/AuthKey_${KEY_ID}.p8"
+      # altool uploads the binary and nothing else. The notes testers read come
+      # from the App Store Connect API, so they are sent separately once Apple
+      # has processed the build.
+      - name: Attach the What to Test notes
+        if: >-
+          steps.signing.outputs.can_sign == 'true' &&
+          steps.testflight.outputs.can_upload == 'true' &&
+          github.event_name != 'pull_request'
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          BUNDLE_ID: nl.remkoweijnen.fitcamxtra
+          BUILD_NUMBER: ${{ github.run_number }}
+          NOTES_PATH: TestFlight/WhatToTest.en-US.txt
+          TIMEOUT_SECONDS: "1800"
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check pyjwt cryptography
+          KEY_DIR="$HOME/.appstoreconnect/private_keys"
+          export APP_STORE_CONNECT_KEY_PATH="$KEY_DIR/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
+          python3 scripts/testflight_notes.py
 
       - name: Remove the App Store Connect key
         if: always()

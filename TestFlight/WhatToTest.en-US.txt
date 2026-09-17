@@ -1,0 +1,15 @@
+Finding the camera. If it went missing on you before, this is the build to try.
+
+Three things were wrong.
+
+The app searched one network. In a car the phone is on more than one at once: the head unit's CarPlay link and the wifi the camera joined are separate networks, and the app picked one by name and ignored the rest. It now sweeps every local network the phone is on, in turn.
+
+A search could get stuck. Leaving the app suspended whatever search was running, and it neither finished nor ended. One sat there for nearly three hours, and every time you came back the app quietly decided it was already looking and did nothing. Searching now stops when the app goes to the background and starts fresh when you return.
+
+Searching was slow and said little when it failed. The app now pings the range first and asks only the addresses that answer, which usually finds the camera in about a second instead of twelve.
+
+What to try:
+- Open the app on your home wifi with the camera on it.
+- Connect the phone to CarPlay, with the camera on the car's wifi, and see whether the camera is found.
+- Leave the app, join a different network, come back, and check that it looks again rather than sitting on "Looking for the camera".
+- If it still does not find the camera, please send the diagnostics from Settings. It now records every network it swept, every address that answered a ping, and every address that answered HTTP without being the camera. That is the material for working out what happened.
