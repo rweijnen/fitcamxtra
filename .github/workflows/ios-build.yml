@@ -129,8 +129,11 @@ jobs:
         if: steps.signing.outputs.can_sign == 'true'
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUNDLE_ID: nl.remkoweijnen.fitcamxtra
         run: |
           set -euo pipefail
+          # Manual signing means the export has to be told which profile backs
+          # the bundle id; without the mapping it refuses with exit 70.
           cat > "$RUNNER_TEMP/ExportOptions.plist" << PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -140,6 +143,11 @@ jobs:
             <key>destination</key><string>export</string>
             <key>signingStyle</key><string>manual</string>
             <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$BUNDLE_ID</key><string>$PROFILE_UUID</string>
+            </dict>
             <key>uploadSymbols</key><true/>
           </dict>
           </plist>
