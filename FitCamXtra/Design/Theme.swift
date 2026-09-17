@@ -40,11 +40,6 @@ enum Palette {
     static let placeholderLight = Color(hex: 0x25211C)
     static let placeholderDark = Color(hex: 0x1E1B17)
 
-    /// The single restrained Dutch cue. Three 3px bars, never enlarged into a flag.
-    static let nlOrange = accent
-    static let nlInk = ink
-    static let nlBlue = Color(hex: 0x2B4A8B)
-
     static let glass = Color(hex: 0x131210, alpha: 0.62)
     static let glassBorder = Color.white.opacity(0.12)
 }
@@ -194,17 +189,5 @@ struct CameraPlaceholder: View {
             }
         }
         .clipped()
-    }
-}
-
-/// The 16px three-bar Dutch cue on the camera card.
-struct DutchMark: View {
-    var body: some View {
-        VStack(spacing: 2) {
-            Rectangle().fill(Palette.nlOrange)
-            Rectangle().fill(Palette.nlInk)
-            Rectangle().fill(Palette.nlBlue)
-        }
-        .frame(width: 16, height: 13)
     }
 }

@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(AppState.self) private var state
     @State private var showDiagnostics = false
     @State private var showNetwork = false
+    @State private var showForgetConfirm = false
 
     var body: some View {
         ScrollView {
@@ -78,7 +79,9 @@ struct SettingsView: View {
                 }
 
                 Spacer()
-                DutchMark()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Palette.inkQuaternary)
             }
             .padding(14)
             .cardSurface()
@@ -168,12 +171,53 @@ struct SettingsView: View {
         return VStack(alignment: .leading, spacing: 8) {
             Eyebrow(text: "Danger zone")
             VStack(spacing: 0) {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, setting in
-                    if index > 0 { divider }
+                forgetRow
+                ForEach(Array(rows.enumerated()), id: \.element.id) { _, setting in
+                    divider
                     row(setting)
                 }
             }
             .cardSurface()
+        }
+    }
+
+    /// Forgetting is a local action: it clears the remembered address and
+    /// stops the app reconnecting. Nothing on the camera changes.
+    private var forgetRow: some View {
+        Button {
+            showForgetConfirm = true
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Forget this camera")
+                        .font(Typo.sans(14.5, .medium))
+                        .foregroundStyle(Palette.destructiveText)
+                    Text("Clears the remembered address and stops reconnecting. The camera itself is not changed.")
+                        .font(Typo.sans(11.5))
+                        .foregroundStyle(Palette.inkQuaternary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Palette.destructiveText)
+            }
+            .padding(.horizontal, 15)
+            .padding(.vertical, 13)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .confirmationDialog(
+            "Forget this camera?",
+            isPresented: $showForgetConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Forget this camera", role: .destructive) {
+                state.forgetCamera()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The app stops looking for it and forgets its address. Search again at any time from the camera card.")
         }
     }
 
