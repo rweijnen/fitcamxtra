@@ -40,7 +40,7 @@ struct ConnectView: View {
                         if let offer = state.widerScanOffer {
                             widerScanCard(offer)
                         }
-                        apInstructions
+                        rememberedCard
                     }
 
                     manualEntry
@@ -144,36 +144,28 @@ struct ConnectView: View {
         return "\(Int((Double(seconds) / 60).rounded())) minutes"
     }
 
-    /// How to reach a camera running its own access point.
-    ///
-    /// iOS never lets an app list the wifi networks in range, so there is no
-    /// honest way to show one as "found". Even with the Hotspot Configuration
-    /// entitlement an app can only ask to join a name it already knows. Until
-    /// that entitlement exists this says what to do instead of implying the
-    /// app found something.
-    private var apInstructions: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Eyebrow(text: "On the camera's own wifi")
+    /// What the app is holding on to, so Forget names something real instead
+    /// of offering to forget a camera the screen never mentions.
+    @ViewBuilder
+    private var rememberedCard: some View {
+        if state.hasRememberedCamera {
+            VStack(alignment: .leading, spacing: 8) {
+                Eyebrow(text: "Remembered")
 
-            Text("Join it in iOS Settings")
-                .font(Typo.sans(15, .semibold))
-                .foregroundStyle(Palette.ink)
+                Text(state.cameraName ?? "A camera you have connected to")
+                    .font(Typo.sans(15, .semibold))
+                    .foregroundStyle(Palette.ink)
 
-            Text(state.remembered.ssidPrefix.isEmpty
-                 ? "Open Settings, then Wi-Fi, and join the camera's own network. Its name is printed on the camera; this app will remember it once you have connected. Come back here and the app finds the camera by itself. Your phone has no internet while on the camera's wifi, which is expected."
-                 : "Open Settings, then Wi-Fi, and pick \(state.remembered.ssidPrefix). Come back here and the app finds the camera by itself. Your phone has no internet while on the camera's wifi, which is expected.")
-                .font(Typo.sans(13))
-                .foregroundStyle(Palette.inkSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text("Joining it from inside the app needs an Apple entitlement this build does not carry yet.")
-                .font(Typo.mono(10.5))
-                .foregroundStyle(Palette.inkQuaternary)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(state.remembered.lastHost.map { "Last answered at \($0). Not on this network now." }
+                     ?? "No address kept; the app searches for it.")
+                    .font(Typo.mono(11))
+                    .foregroundStyle(Palette.inkQuaternary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .cardSurface()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .cardSurface()
     }
 
     private var manualEntry: some View {
@@ -267,7 +259,7 @@ struct ConnectView: View {
                 Spacer()
 
                 if state.hasRememberedCamera {
-                    Button("Forget this camera") {
+                    Button(state.cameraName.map { "Forget \($0)" } ?? "Forget this camera") {
                         showForgetConfirm = true
                     }
                     .font(Typo.sans(13.5, .semibold))
@@ -286,7 +278,9 @@ struct ConnectView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The app stops looking for it and forgets its address. Nothing on the camera changes.")
+            Text(state.cameraName.map {
+                "The app stops looking for \($0) and forgets its name and address. Nothing on the camera changes."
+            } ?? "The app stops looking for it and forgets its address. Nothing on the camera changes.")
         }
     }
 

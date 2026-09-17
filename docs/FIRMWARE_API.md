@@ -87,6 +87,12 @@ contiguous and cannot be guessed:**
 
 RSSI is positive despite the dBm label, so it is treated as relative strength.
 
+**`3012` does report a model.** This unit answers `car-cam-cx7053DW`, which
+is also what its access point is called. The earlier note here said the
+command returned nothing usable; it returned no *firmware* string, and the
+model was being read and stored all along. The name on the Settings screen
+comes from this and is not invented.
+
 **The camera answers ICMP echo.** Confirmed on hardware. Discovery pings the
 range first and asks only the addresses that reply for `cmd=3012`, which turns
 253 connection attempts into a handful. The full HTTP sweep still runs when the
@@ -121,4 +127,4 @@ the same TCP connection.
 | **4001 thumbnails and 4003 delete**: parameter form and response type. | Both are implemented with `str=<path>` and untested. |
 | **Writing the bitrate**: does 2022 alone apply it, or does 2013 have to be sent too? | The app writes 2022 only and re-reads to confirm. |
 | **Rear channel**: how to detect one? `3002` GetSupportCmd? | The front/rear switch stays hidden until it can be detected. |
-| **Model and firmware**: `3012` returns neither on this unit. Does `3017` GetBaseinfo carry them? | The app shows "unreported" rather than inventing a name. |
+| **Firmware version**: `3012` carries a model but no firmware string. Does `3017` GetBaseinfo carry one? | The app shows "unreported" rather than inventing a version. |

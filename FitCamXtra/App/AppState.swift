@@ -540,6 +540,11 @@ final class AppState {
         elapsedSeconds = 0
         remembered.lastHost = nil
         remembered.lastSSID = nil
+        // The name and the access point came from the camera being forgotten,
+        // so they go too. Leaving them behind kept a forgotten camera's name
+        // on the Settings screen with nothing to connect it to.
+        remembered.name = ""
+        remembered.ssidPrefix = ""
         remembered.autoConnectEnabled = false
         RememberedStore.save(remembered)
         sink.log(.info, .app, "Camera forgotten. Auto-connect is off until you scan again.")
