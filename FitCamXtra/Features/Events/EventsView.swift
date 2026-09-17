@@ -54,7 +54,7 @@ struct EventsView: View {
 
                 Text("Older events are on the card until overwritten")
                     .font(Typo.mono(11.5))
-                    .foregroundStyle(Color.white.opacity(0.3))
+                    .foregroundStyle(Palette.inkFaint)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 4)
             }
@@ -116,7 +116,7 @@ struct EventCard: View {
                         .foregroundStyle(Palette.ink)
                     Text(event.recordedAt.formatted(date: .abbreviated, time: .shortened))
                         .font(Typo.sans(12))
-                        .foregroundStyle(Palette.ink.opacity(0.45))
+                        .foregroundStyle(Palette.inkQuaternary)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")

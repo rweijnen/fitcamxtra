@@ -102,7 +102,7 @@ struct LiveView: View {
                 controlBar
                 Text("live audio muted - tap image for full frame")
                     .font(Typo.mono(10.5))
-                    .foregroundStyle(Color.white.opacity(0.3))
+                    .foregroundStyle(Palette.onVideoCaption)
             }
             .padding(.horizontal, 18)
             .padding(.bottom, 12)
@@ -119,7 +119,7 @@ struct LiveView: View {
             Text(state.isRecording ? "REC \(state.elapsedLabel)" : "STANDBY")
                 .font(Typo.mono(11.5, .semibold))
                 .tracking(0.46)
-                .foregroundStyle(state.isRecording ? .white : Color.white.opacity(0.55))
+                .foregroundStyle(state.isRecording ? .white : Color.white.opacity(0.72))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -136,10 +136,10 @@ struct LiveView: View {
             .buttonStyle(.plain)
 
             if let sd = state.sdCardPercentUsed {
-                chip("SD \(sd)%", color: Color.white.opacity(0.7))
+                chip("SD \(sd)%", color: Color.white.opacity(0.85))
             }
             if let battery = state.batteryPercent {
-                chip("\(battery)%", color: Color.white.opacity(0.7))
+                chip("\(battery)%", color: Color.white.opacity(0.85))
             }
         }
     }

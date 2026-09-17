@@ -25,8 +25,12 @@ enum Palette {
     static let ink = Color(hex: 0xEFE8DC)
     static let inkSecondary = Color(hex: 0xEFE8DC, alpha: 0.72)
     static let inkTertiary = Color(hex: 0xEFE8DC, alpha: 0.62)
-    static let inkQuaternary = Color(hex: 0xEFE8DC, alpha: 0.45)
-    static let inkFaint = Color(hex: 0xEFE8DC, alpha: 0.38)
+    // Small type on a near-black ground needs real contrast: these were
+    // 0.45 and 0.38, which measure 3.9:1 and 3.2:1 and fail WCAG AA.
+    static let inkQuaternary = Color(hex: 0xEFE8DC, alpha: 0.60)
+    static let inkFaint = Color(hex: 0xEFE8DC, alpha: 0.52)
+    /// Captions over video, where the ground is not the app background.
+    static let onVideoCaption = Color.white.opacity(0.62)
 
     static let accent = Color(hex: 0xFF5C00)
     static let accentText = Color(hex: 0xFF8A3D)
@@ -177,12 +181,12 @@ struct CameraPlaceholder: View {
                     if let caption {
                         Text(caption)
                             .font(Typo.mono(10.5))
-                            .foregroundStyle(Color.white.opacity(0.32))
+                            .foregroundStyle(Palette.onVideoCaption)
                     }
                     if let subcaption {
                         Text(subcaption)
                             .font(Typo.mono(10.5))
-                            .foregroundStyle(Color.white.opacity(0.32))
+                            .foregroundStyle(Palette.onVideoCaption)
                     }
                 }
                 .multilineTextAlignment(.center)
