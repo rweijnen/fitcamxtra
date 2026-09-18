@@ -104,6 +104,10 @@ final class AppState {
     var remembered: RememberedCamera = .default
     var networkMode: NetworkMode = .accessPoint
     var discoveryStatus: String?
+    /// What stood in the way of the last search, when the app could tell.
+    /// Drives the offer to open iOS Settings, because the two things that
+    /// produce it are both fixed there and nowhere else.
+    var searchObstacle: DiscoveryOutcome.Obstacle?
     /// Set when the phone's network is wider than the range swept without
     /// asking, so the UI can offer the full sweep rather than the app quietly
     /// concluding the camera is absent.
@@ -392,14 +396,14 @@ final class AppState {
             return
         }
 
+        searchObstacle = outcome.obstacle
+
         if let camera = outcome.camera {
             await connect(to: camera)
         } else {
             connection = .disconnected
             widerScanOffer = outcome.widerScan
-            discoveryStatus = outcome.widerScan == nil
-                ? "No camera found on this network."
-                : "No camera on this part of the network."
+            discoveryStatus = Self.status(for: outcome)
         }
     }
 
@@ -429,6 +433,23 @@ final class AppState {
         discoveryTask = nil
     }
 
+    /// What to say about a search that found nothing. The app knows more
+    /// than "no camera found" in two cases, and saying the general thing when
+    /// the specific one is known is how someone ends up searching for a
+    /// camera that was never the problem.
+    private static func status(for outcome: DiscoveryOutcome) -> String {
+        switch outcome.obstacle {
+        case .phoneNotOnWiFi:
+            return "This phone is not on a wifi network, so there is nowhere to look."
+        case .networkUnreachable:
+            return "Nothing on this network answered at all, not even a ping."
+        case nil:
+            return outcome.widerScan == nil
+                ? "No camera found on this network."
+                : "No camera on this part of the network."
+        }
+    }
+
     private func apply(_ progress: DiscoveryProgress) {
         switch progress {
         case .tryingCachedAddress(let host):
@@ -453,6 +474,7 @@ final class AppState {
     }
 
     func connect(to camera: DiscoveredCamera) async {
+        searchObstacle = nil
         let client = CameraClient(host: camera.host, transport: transport, sink: sink)
         self.client = client
         connection = .connected(camera)

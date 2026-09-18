@@ -207,27 +207,10 @@ struct LiveView: View {
 
             Spacer()
 
-            // Events shortcut
-            Button {
-                state.tab = .events
-            } label: {
-                ZStack(alignment: .topTrailing) {
-                    CameraPlaceholder()
-                        .frame(width: 16, height: 16)
-                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-                        .frame(width: 46, height: 46)
-                        .background(Circle().fill(Color.white.opacity(0.1)))
-
-                    if state.unreadCount > 0 {
-                        Circle()
-                            .fill(Palette.accent)
-                            .frame(width: 8, height: 8)
-                            .overlay(Circle().strokeBorder(Palette.bg, lineWidth: 2))
-                            .offset(x: 1, y: -1)
-                    }
-                }
-            }
-            .buttonStyle(.plain)
+            // No Events shortcut here: the tab bar sits directly below this
+            // row and already goes there, with the same unread badge. The
+            // hazard-stripe placeholder it used as an icon also read as a
+            // picture that had failed to load.
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)

@@ -10,6 +10,10 @@ final class MediaLibrary {
     private(set) var files: [MediaFile] = []
     private(set) var isLoadingEvents = false
     private(set) var isLoadingFiles = false
+    /// Why the last read failed, if it did, and shown on the screen that
+    /// failed. An unread error here is how a timeout came to be rendered as
+    /// "Nothing on the card yet", which tells someone who has just had a
+    /// crash that their camera locked nothing.
     private(set) var lastError: String?
     /// Events whose ids were not in the list the last time we connected.
     private(set) var unreadEventIDs: Set<String> = []
@@ -132,6 +136,7 @@ final class MediaLibrary {
             let response = try await downloads.gate.interactive {
                 try await client.send(.eventFileList, par: 0)
             }
+            lastError = nil
             sink.log(.info, .app, "File list fetched", detail: String(response.raw.prefix(2000)))
             let parsed = FileListParser.parse(Data(response.raw.utf8))
                 .sorted(by: MediaLibrary.newestFirst)

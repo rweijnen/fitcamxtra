@@ -24,6 +24,11 @@ struct SDCardView: View {
 
                     if library.isLoadingFiles && library.files.isEmpty {
                         loading
+                    } else if let problem = library.lastError, library.files.isEmpty {
+                        // A failed read is not an empty card, and saying it is
+                        // tells someone who has just had a crash that their
+                        // camera locked nothing.
+                        readFailed(problem)
                     } else if library.files.isEmpty {
                         EmptyStateCard(
                             eyebrow: "Card",
@@ -38,6 +43,16 @@ struct SDCardView: View {
                         ForEach(library.filesByDay(filter: filter), id: \.day) { group in
                             dayGroup(group.day, files: group.files)
                         }
+                    }
+
+                    if state.downloader.thumbnailsUnavailable, !library.files.isEmpty {
+                        // 80 identical hazard-striped tiles with no
+                        // explanation reads as a broken app rather than as a
+                        // camera that will not send previews.
+                        Text("This camera will not send previews, so clips are listed by time.")
+                            .font(Typo.mono(.micro))
+                            .foregroundStyle(Palette.inkQuaternary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     if let failure {
@@ -69,6 +84,45 @@ struct SDCardView: View {
         }
     }
 
+    /// Says the read failed, and offers the only useful next step.
+    private func readFailed(_ reason: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Eyebrow(text: "Card", color: Palette.destructiveText)
+
+            Text("Could not read the card")
+                .font(Typo.sans(.cardTitle, .semibold))
+                .foregroundStyle(Palette.ink)
+
+            Text(reason)
+                .font(Typo.mono(.detail))
+                .foregroundStyle(Palette.destructiveText)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("The clips are still on the camera. This is the app failing to read the listing, not an empty card.")
+                .font(Typo.sans(.detail))
+                .foregroundStyle(Palette.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                Task { await library.loadFiles() }
+            } label: {
+                Text("Try again")
+                    .font(Typo.sans(.body, .semibold))
+                    .foregroundStyle(Palette.accentInk)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(
+                        RoundedRectangle(cornerRadius: Metrics.Radius.card, style: .continuous)
+                            .fill(Palette.accent)
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .cardSurface(border: Palette.destructiveText.opacity(0.4))
+    }
+
     // MARK: - Header
 
     private var header: some View {
@@ -81,7 +135,8 @@ struct SDCardView: View {
             Spacer()
 
             if library.isShowingCachedListing {
-                Text("From last visit")
+                Text(library.listingFetchedAt.map { "From \($0.formatted(date: .omitted, time: .shortened))" }
+                     ?? "From last visit")
                     .font(Typo.mono(.micro))
                     .foregroundStyle(Palette.inkQuaternary)
             }
@@ -276,7 +331,9 @@ struct SDCardView: View {
         for (index, file) in files.enumerated() {
             busy = "Saving \(index + 1) of \(files.count)"
             do {
-                try await state.downloader.saveToPhotos(file)
+                try await state.downloader.saveToPhotos(file) { fraction in
+                    busy = "Saving \(index + 1) of \(files.count) — \(Int(fraction * 100))%"
+                }
             } catch {
                 failure = error.localizedDescription
                 break

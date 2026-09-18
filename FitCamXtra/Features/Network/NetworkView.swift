@@ -226,9 +226,9 @@ struct NetworkView: View {
                     // The camera's limits are shown rather than discovered:
                     // it rejects an over-long value silently and then the mode
                     // switch goes ahead anyway.
-                    Text("\(homeSSID.count)/\(CameraClient.maximumStationSSIDLength)")
+                    Text("\(homeSSID.utf8.count)/\(CameraClient.maximumStationSSIDLength)")
                         .font(Typo.mono(.micro))
-                        .foregroundStyle(homeSSID.count > CameraClient.maximumStationSSIDLength
+                        .foregroundStyle(homeSSID.utf8.count > CameraClient.maximumStationSSIDLength
                                          ? Palette.destructiveText : Palette.inkQuaternary)
                 }
                 TextField("Your wifi name", text: $homeSSID)
@@ -248,9 +248,9 @@ struct NetworkView: View {
                 HStack {
                     Eyebrow(text: "Passphrase")
                     Spacer()
-                    Text("\(passphrase.count)/\(CameraClient.maximumStationPassphraseLength)")
+                    Text("\(passphrase.utf8.count)/\(CameraClient.maximumStationPassphraseLength)")
                         .font(Typo.mono(.micro))
-                        .foregroundStyle(passphrase.count > CameraClient.maximumStationPassphraseLength
+                        .foregroundStyle(passphrase.utf8.count > CameraClient.maximumStationPassphraseLength
                                          ? Palette.destructiveText : Palette.inkQuaternary)
                 }
                 SecureField("Your wifi password", text: $passphrase)
@@ -270,6 +270,13 @@ struct NetworkView: View {
                 Text(problem)
                     .font(Typo.mono(.micro))
                     .foregroundStyle(Palette.destructiveText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let warning = CameraClient.stationPassphraseWarning(passphrase) {
+                Text(warning)
+                    .font(Typo.mono(.micro))
+                    .foregroundStyle(Palette.accentText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 

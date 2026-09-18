@@ -37,11 +37,28 @@ public enum DiscoveryProgress: Sendable, Equatable {
 
 /// What a finished search found, and what is still worth trying.
 public struct DiscoveryOutcome: Sendable, Equatable {
+    /// Why a search found nothing, when the app can actually tell. Anything
+    /// it cannot diagnose stays nil rather than guessing.
+    public enum Obstacle: Sendable, Equatable {
+        /// No local IPv4 network at all: the phone is not on wifi.
+        case phoneNotOnWiFi
+        /// The network was swept and nothing answered even a ping, which is
+        /// what a refused local-network permission looks like from here.
+        case networkUnreachable
+    }
+
     public let camera: DiscoveredCamera?
+    public var obstacle: Obstacle?
     /// Set when the phone's network is wider than the range swept without
     /// asking, so the caller can offer the full sweep instead of the app
     /// quietly deciding the camera is not there.
     public let widerScan: WiderScan?
+
+    public init(camera: DiscoveredCamera?, widerScan: WiderScan?, obstacle: Obstacle? = nil) {
+        self.camera = camera
+        self.widerScan = widerScan
+        self.obstacle = obstacle
+    }
 
     public struct WiderScan: Sendable, Equatable {
         public let prefixLength: Int
@@ -170,7 +187,7 @@ public actor DiscoveryService {
             sink?.log(.error, .discovery,
                       "No local IPv4 network found. The phone is probably not on wifi.")
             onProgress?(.finishedWithoutResult)
-            return DiscoveryOutcome(camera: nil, widerScan: nil)
+            return DiscoveryOutcome(camera: nil, widerScan: nil, obstacle: .phoneNotOnWiFi)
         }
 
         sink?.log(.info, .discovery,
@@ -183,6 +200,9 @@ public actor DiscoveryService {
 
         // 3. Sweep each of them until one answers.
         var wider: DiscoveryOutcome.WiderScan?
+        // Nothing answering a ping anywhere is the signature of a phone that
+        // cannot reach its own network, rather than of a camera that is absent.
+        var sawAnythingAlive = false
         for subnet in subnets {
             // A wider sweep is asked for by network, so the requested width
             // applies only to a network that is actually that wide.
@@ -206,8 +226,9 @@ public actor DiscoveryService {
                 sink?.log(.info, .discovery, "Search stopped after \(elapsed)s before it finished")
                 onProgress?(.finishedWithoutResult)
                 return DiscoveryOutcome(camera: nil, widerScan: nil)
-            case .nothing(let offer):
+            case .nothing(let offer, let anythingAlive):
                 wider = wider ?? offer
+                sawAnythingAlive = sawAnythingAlive || anythingAlive
             }
         }
 
@@ -219,13 +240,15 @@ public actor DiscoveryService {
                       + "local network permission was allowed.")
         }
         onProgress?(.finishedWithoutResult)
-        return DiscoveryOutcome(camera: nil, widerScan: wider)
+        return DiscoveryOutcome(camera: nil,
+                                widerScan: wider,
+                                obstacle: sawAnythingAlive ? nil : .networkUnreachable)
     }
 
     private enum SubnetSweepResult {
         case found(DiscoveredCamera)
         case cancelled
-        case nothing(wider: DiscoveryOutcome.WiderScan?)
+        case nothing(wider: DiscoveryOutcome.WiderScan?, anythingAlive: Bool)
     }
 
     /// One network, fast pass then slow pass.
@@ -255,7 +278,7 @@ public actor DiscoveryService {
         let targets = subnet.scanTargets(prefixLength: width).filter { $0.description != cachedHost }
         guard !targets.isEmpty else {
             sink?.log(.warning, .discovery, "Nothing to scan on \(label)")
-            return .nothing(wider: nil)
+            return .nothing(wider: nil, anythingAlive: false)
         }
 
         onProgress?(.sweeping(subnet: label, probed: 0, total: targets.count))
@@ -358,7 +381,7 @@ public actor DiscoveryService {
             sink?.log(.info, .discovery, "No camera answered on \(label) after \(elapsed)s")
         }
 
-        return .nothing(wider: wider)
+        return .nothing(wider: wider, anythingAlive: !(living?.isEmpty ?? true))
     }
 
     /// Probe one address. Used by discovery and by the manual-entry field.

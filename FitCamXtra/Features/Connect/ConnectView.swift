@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ConnectView: View {
     @Environment(AppState.self) private var state
@@ -32,6 +33,10 @@ struct ConnectView: View {
                         Text(status)
                             .font(Typo.mono(.detail))
                             .foregroundStyle(Palette.inkQuaternary)
+                    }
+
+                    if let obstacle = state.searchObstacle, !state.isSearching {
+                        obstacleCard(obstacle)
                     }
 
                     if let camera = state.connection.camera {
@@ -145,6 +150,52 @@ struct ConnectView: View {
     private func durationLabel(_ seconds: Int) -> String {
         if seconds < 90 { return "\(seconds) seconds" }
         return "\(Int((Double(seconds) / 60).rounded())) minutes"
+    }
+
+    /// The two failures the app can actually diagnose, each with the one
+    /// action that fixes it. iOS never re-asks for local network permission,
+    /// so without a way into Settings a refusal is permanent.
+    private func obstacleCard(_ obstacle: DiscoveryOutcome.Obstacle) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Eyebrow(text: obstacle == .phoneNotOnWiFi ? "Not on wifi" : "Nothing answered",
+                    color: Palette.accentText)
+
+            Text(obstacle == .phoneNotOnWiFi
+                 ? "This phone is not on a wifi network"
+                 : "Nothing on this network answered")
+                .font(Typo.sans(.cardTitle, .semibold))
+                .foregroundStyle(Palette.ink)
+
+            Text(obstacle == .phoneNotOnWiFi
+                 ? "The camera is reached over wifi, so there is nowhere to look until the phone joins a network — the camera's own, or the one it was told to join."
+                 : "Not one address replied, which is what it looks like when this app has been refused access to the local network. Check that FitCamXtra is allowed it.")
+                .font(Typo.sans(.detail))
+                .foregroundStyle(Palette.inkSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                openSystemSettings()
+            } label: {
+                Text("Open Settings")
+                    .font(Typo.sans(.body, .semibold))
+                    .foregroundStyle(Palette.accentInk)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(
+                        RoundedRectangle(cornerRadius: Metrics.Radius.card, style: .continuous)
+                            .fill(Palette.accent)
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .cardSurface(border: Palette.accent.opacity(0.45))
+    }
+
+    private func openSystemSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 
     /// What the app is holding on to, so Forget names something real instead

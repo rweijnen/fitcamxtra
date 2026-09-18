@@ -1,5 +1,6 @@
 import AVKit
 import SwiftUI
+import UIKit
 
 struct FileDetailView: View {
     let file: MediaFile
@@ -13,6 +14,9 @@ struct FileDetailView: View {
     @State private var isBusy = false
     @State private var failure: String?
     @State private var showDeleteConfirm = false
+    /// iOS will not ask again once Photos access is refused, so the only way
+    /// out of that state is the Settings app.
+    @State private var photosRefused = false
 
     var body: some View {
         ZStack {
@@ -37,6 +41,18 @@ struct FileDetailView: View {
                                 .font(Typo.mono(.detail))
                                 .foregroundStyle(Palette.destructiveText)
                                 .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        if photosRefused {
+                            // iOS never asks a second time, so this is the
+                            // only way back from a refusal.
+                            Button("Open Settings") {
+                                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                                UIApplication.shared.open(url)
+                            }
+                            .font(Typo.sans(.body, .semibold))
+                            .foregroundStyle(Palette.accent)
+                            .frame(minHeight: 44)
                         }
 
                         Text("Saving copies the file to your phone's album over wifi. The original stays on the card until the loop overwrites it.")
@@ -213,9 +229,18 @@ struct FileDetailView: View {
         failure = nil
         saveLabel = "Saving..."
         do {
-            try await state.downloader.saveToPhotos(file)
+            // The downloader has reported progress all along; nothing asked
+            // for it, so an 80 MB clip showed "Saving..." and nothing else
+            // for minutes, which is the thing that cannot be told from a hang.
+            try await state.downloader.saveToPhotos(file) { fraction in
+                saveLabel = "Saving \(Int(fraction * 100))%"
+            }
             saveLabel = "Saved to Photos"
             try? await Task.sleep(for: .seconds(1.8))
+            saveLabel = "Save to Photos"
+        } catch MediaDownloader.DownloadError.photosDenied {
+            failure = "FitCamXtra is not allowed to add to Photos."
+            photosRefused = true
             saveLabel = "Save to Photos"
         } catch {
             failure = error.localizedDescription

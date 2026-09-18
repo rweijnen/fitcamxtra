@@ -43,6 +43,13 @@ struct EventsView: View {
 
                 if library.isLoadingEvents && library.events.isEmpty {
                     loading
+                } else if let problem = library.lastError, library.events.isEmpty {
+                    // Not "no locked clips" — we do not know that.
+                    EmptyStateCard(
+                        eyebrow: "Event list",
+                        headline: "Could not read the card",
+                        detail: "\(problem)\n\nThe locked clips are still on the camera. Pull down to try again."
+                    )
                 } else if library.events.isEmpty {
                     EmptyStateCard(
                         eyebrow: "Event list",

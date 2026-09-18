@@ -147,8 +147,23 @@ public actor CameraClient {
 
     /// The limits the firmware imposes, as a check the UI can also run before
     /// offering to apply anything.
+    /// Both measured in UTF-8 bytes, which is what the device's buffers hold.
     public static let maximumStationSSIDLength = 31
     public static let maximumStationPassphraseLength = 25
+
+    /// A password with a space in it may not survive the trip.
+    ///
+    /// Unverified: the claim is that the firmware reads the field with a
+    /// scanf `%s`, which stops at whitespace and would leave the camera
+    /// holding a truncated password. That matches how `%s` behaves, but no
+    /// capture or disassembly in hand shows it, so the app warns and still
+    /// sends rather than refusing a password that may be perfectly fine.
+    public static func stationPassphraseWarning(_ passphrase: String) -> String? {
+        guard passphrase.contains(" ") else { return nil }
+        return "This password contains a space. Some builds of this firmware store only "
+            + "the part before it, which would leave the camera unable to join and only "
+            + "a factory reset to undo it."
+    }
 
     public static func validateStationCredentials(ssid: String, passphrase: String) throws {
         guard !ssid.isEmpty else {
@@ -160,17 +175,20 @@ public actor CameraClient {
                 + "so neither can contain one. This network cannot be set from here."
             )
         }
-        guard ssid.count <= maximumStationSSIDLength else {
+        // Bytes, not characters: these are fixed buffers on the device, so a
+        // name that looks like 31 characters can be 40 bytes of UTF-8 and
+        // overrun one.
+        guard ssid.utf8.count <= maximumStationSSIDLength else {
             throw CameraError.credentialsRefused(
                 "The camera stores at most \(maximumStationSSIDLength) characters of a "
-                + "network name, and this one is \(ssid.count)."
+                + "network name, and this one needs \(ssid.utf8.count)."
             )
         }
-        guard passphrase.count <= maximumStationPassphraseLength else {
+        guard passphrase.utf8.count <= maximumStationPassphraseLength else {
             throw CameraError.credentialsRefused(
                 "The camera stores at most \(maximumStationPassphraseLength) characters of a "
-                + "password, and this one is \(passphrase.count). This camera cannot join "
-                + "that network."
+                + "password, and this one needs \(passphrase.utf8.count). This camera cannot "
+                + "join that network."
             )
         }
     }

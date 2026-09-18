@@ -32,6 +32,15 @@ struct SettingRow: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
+                    if setting.provisional {
+                        // The flag has been in the model since these rows
+                        // shipped and no screen read it, so a guess was drawn
+                        // exactly like a confirmed value.
+                        Text("unconfirmed on this firmware")
+                            .font(Typo.mono(.micro))
+                            .foregroundStyle(Palette.accentText)
+                    }
+
                     if case .unavailable(let reason) = value {
                         Text(reason)
                             .font(Typo.mono(.micro))
@@ -90,13 +99,24 @@ struct SettingRow: View {
         } else {
             switch setting.kind {
             case .toggle:
-                Toggle("", isOn: Binding(
-                    get: { (value.intValue ?? 0) != 0 },
-                    set: { onApply($0 ? 1 : 0) }
-                ))
-                .labelsHidden()
-                .tint(Palette.accent)
-                .disabled(!value.isEditable)
+                if value.intValue == nil {
+                    // No switch at all rather than one drawn off. A row the
+                    // camera has not reported is unknown, and a switch in the
+                    // off position is a statement that it is off — which is
+                    // the picture the settings layer was rewritten to stop
+                    // showing.
+                    Text("—")
+                        .font(Typo.mono(.cardTitle))
+                        .foregroundStyle(Palette.inkFaint)
+                } else {
+                    Toggle(setting.label, isOn: Binding(
+                        get: { (value.intValue ?? 0) != 0 },
+                        set: { onApply($0 ? 1 : 0) }
+                    ))
+                    .labelsHidden()
+                    .tint(Palette.accent)
+                    .disabled(!value.isEditable)
+                }
 
             case .options:
                 Button {
@@ -186,7 +206,9 @@ struct SettingRow: View {
 
     private func currentLabel(_ options: [SettingOption]) -> String {
         guard let current = value.intValue else { return "--" }
-        return options.first { $0.par == current }?.label ?? "value \(current)"
+        // Off the end of a table the app guessed at: say so, rather than
+        // printing a raw number as though it were the name of a setting.
+        return options.first { $0.par == current }?.label ?? "unknown (\(current))"
     }
 
     private func format(_ value: Double) -> String {

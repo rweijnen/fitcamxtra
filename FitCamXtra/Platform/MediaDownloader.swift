@@ -33,7 +33,10 @@ final class MediaDownloader {
     private let session: URLSession
     private let thumbnails = ThumbnailCache()
     private var hasLoggedThumbnailFailure = false
-    private var thumbnailsUnavailable = false
+    /// True once the camera has answered a thumbnail request with something
+    /// that is not an image. Read by the card screen, which owes the user an
+    /// explanation for a grid of placeholders.
+    private(set) var thumbnailsUnavailable = false
     /// Work the app started by itself waits behind anything a person is
     /// waiting on. The camera serves one thing at a time well.
     let gate: CameraActivityGate
