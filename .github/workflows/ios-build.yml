@@ -17,6 +17,11 @@ on:
       - "scripts/testflight_notes.py"
       - ".github/workflows/ios-build.yml"
   workflow_dispatch:
+    inputs:
+      testflight:
+        description: "Also upload this build to TestFlight"
+        type: boolean
+        default: false
 
 env:
   SCHEME: FitCamXtra
@@ -103,20 +108,27 @@ jobs:
             echo "can_export=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # TestFlight upload stays inert until an App Store Connect API key is
-      # stored, so the build still passes without one.
+      # TestFlight is now on request rather than on every push. Apple limits
+      # uploads per day and takes minutes to process each one, and the ad-hoc
+      # IPA above is what a normal change gets tried with. Run the workflow by
+      # hand with "Also upload this build to TestFlight" ticked when a build is
+      # meant for testers.
       - name: Decide whether we can upload to TestFlight
         id: testflight
         env:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
           KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8_BASE64 }}
+          REQUESTED: ${{ inputs.testflight }}
         run: |
-          if [ -n "$KEY_ID" ] && [ -n "$ISSUER_ID" ] && [ -n "$KEY_P8" ]; then
+          if [ "$REQUESTED" != "true" ]; then
+            echo "::notice::TestFlight upload not requested for this run."
+            echo "can_upload=false" >> "$GITHUB_OUTPUT"
+          elif [ -n "$KEY_ID" ] && [ -n "$ISSUER_ID" ] && [ -n "$KEY_P8" ]; then
             echo "can_upload=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::No App Store Connect API key; skipping the TestFlight upload."
-            echo "can_upload=false" >> "$GITHUB_OUTPUT"
+            echo "::error::TestFlight was requested but the App Store Connect key is missing."
+            exit 1
           fi
 
       - name: Build unsigned
@@ -255,6 +267,7 @@ jobs:
             </dict>
             <key>compileBitcode</key><false/>
           </dict>
+          </plist>
           PLIST
           xcodebuild -exportArchive \
             -archivePath "$ARCHIVE_PATH" \
@@ -285,8 +298,7 @@ jobs:
       - name: Upload to TestFlight
         if: >-
           steps.signing.outputs.can_sign == 'true' &&
-          steps.testflight.outputs.can_upload == 'true' &&
-          github.event_name != 'pull_request'
+          steps.testflight.outputs.can_upload == 'true'
         env:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
@@ -309,8 +321,7 @@ jobs:
       - name: Attach the What to Test notes
         if: >-
           steps.signing.outputs.can_sign == 'true' &&
-          steps.testflight.outputs.can_upload == 'true' &&
-          github.event_name != 'pull_request'
+          steps.testflight.outputs.can_upload == 'true'
         env:
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
