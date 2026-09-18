@@ -127,8 +127,17 @@ extension FileTransfer: URLSessionDataDelegate {
         if offset > 0 && !resumed {
             written = 0
         }
-        try? handle?.truncate(atOffset: UInt64(written))
-        try? handle?.seekToEnd()
+        do {
+            // Cut back to what has actually been counted, so disk and counter
+            // cannot disagree, then append from there.
+            try handle?.truncate(atOffset: UInt64(written))
+            try handle?.seekToEnd()
+        } catch {
+            failure = error
+            dataTask.cancel()
+            completionHandler(.cancel)
+            return
+        }
         landed?(written)
 
         completionHandler(.allow)

@@ -406,7 +406,10 @@ final class MediaDownloader {
             // drops would tell the retry that nothing was written.
             landed: { bytes in landed.value = bytes },
             progress: progress.map { report in
-                { fraction in
+                // The transfer calls this from its own queue, so the hop to
+                // the main actor is explicit and the closure is declared
+                // Sendable rather than being promoted on the way through.
+                { @Sendable fraction in
                     Task { @MainActor in report(fraction) }
                 }
             }

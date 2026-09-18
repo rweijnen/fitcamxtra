@@ -102,7 +102,7 @@ final class MediaLibrary {
     }
 
     func loadEvents(lastSeenID: String?, lastSeenAt: Date? = nil) async {
-        guard let client else { return }
+        guard client != nil else { return }
         // The listing this needs is the listing the card screen needs. Pulling
         // it twice cost a second of an already slow camera for nothing.
         if files.isEmpty || isShowingCachedListing {
