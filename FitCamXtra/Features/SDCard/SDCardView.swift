@@ -57,7 +57,9 @@ struct SDCardView: View {
         }
         .background(Palette.bg)
         .task(id: state.connection.camera?.host) {
-            if state.connection.isConnected && library.files.isEmpty {
+            // A remembered listing shows at once; the camera still gets asked,
+            // because what is on the card may have moved on without us.
+            if state.connection.isConnected && (library.files.isEmpty || library.isShowingCachedListing) {
                 await library.loadFiles()
             }
         }
@@ -77,6 +79,12 @@ struct SDCardView: View {
                 .foregroundStyle(Palette.ink)
 
             Spacer()
+
+            if library.isShowingCachedListing {
+                Text("From last visit")
+                    .font(Typo.mono(.micro))
+                    .foregroundStyle(Palette.inkQuaternary)
+            }
 
             if !library.files.isEmpty {
                 Button(selecting ? "Done" : "Select") {
@@ -390,6 +398,11 @@ struct FileTile: View {
                 .strokeBorder(isSelected ? Palette.accent : Color.clear, lineWidth: 2)
         )
         .task {
+            // Whatever is already on disk, with no request at all.
+            if let cached = downloader.cachedThumbnail(for: file) {
+                thumbnail = cached
+                return
+            }
             thumbnail = await downloader.thumbnail(for: file)
         }
     }

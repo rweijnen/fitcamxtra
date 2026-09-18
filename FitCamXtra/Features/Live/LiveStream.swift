@@ -23,9 +23,14 @@ final class LiveStream {
     @ObservationIgnored private var client: RTSPClient?
     @ObservationIgnored private var host: String?
     @ObservationIgnored private let sink: LogSink
+    /// Watching live is the most demanding thing the camera does, so the
+    /// background prefetch stands down for as long as it runs.
+    @ObservationIgnored private let gate: CameraActivityGate
+    @ObservationIgnored private var holdsGate = false
 
-    init(sink: LogSink) {
+    init(sink: LogSink, gate: CameraActivityGate) {
         self.sink = sink
+        self.gate = gate
         self.renderer = VideoRenderer(sink: sink)
     }
 
@@ -38,6 +43,8 @@ final class LiveStream {
         self.host = host
         status = .connecting
         renderer.reset()
+        holdsGate = true
+        Task { [gate] in await gate.beginInteractive() }
 
         Task { [weak self] in
             var streamURL: String?
@@ -91,6 +98,10 @@ final class LiveStream {
     }
 
     func stop() {
+        if holdsGate {
+            holdsGate = false
+            Task { [gate] in await gate.endInteractive() }
+        }
         let existing = client
         client = nil
         host = nil

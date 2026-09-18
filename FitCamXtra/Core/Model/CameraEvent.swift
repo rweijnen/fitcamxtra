@@ -59,8 +59,10 @@ public struct CameraEvent: Sendable, Identifiable, Equatable {
 }
 
 /// A file on the card: loop clip, locked clip or still.
-public struct MediaFile: Sendable, Identifiable, Equatable {
-    public enum Kind: Sendable, Equatable {
+/// Codable so the listing can be kept between launches: the camera takes most
+/// of a second to describe a card and several times that for a full one.
+public struct MediaFile: Sendable, Identifiable, Equatable, Codable {
+    public enum Kind: Sendable, Equatable, Codable {
         case video
         case photo
     }

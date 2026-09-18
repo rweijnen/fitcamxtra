@@ -171,11 +171,12 @@ final class AppState {
          interfaces: NetworkInterfaceProviding = NetworkInterfaceProvider()) {
         let log = DiagnosticsLog()
         let sink = DiagnosticsSink(log)
+        let gate = CameraActivityGate()
         self.diagnostics = log
         self.sink = sink
         self.settings = SettingsStore(sink: sink)
-        self.liveStream = LiveStream(sink: sink)
-        let downloader = MediaDownloader(sink: sink)
+        self.liveStream = LiveStream(sink: sink, gate: gate)
+        let downloader = MediaDownloader(sink: sink, gate: gate)
         self.downloader = downloader
         self.library = MediaLibrary(sink: sink, downloads: downloader)
         self.transport = transport
@@ -247,6 +248,10 @@ final class AppState {
     /// here means the app comes back ready to look on the new network.
     func onBackground() {
         cancelDiscovery(reason: "the app went to the background")
+        // iOS is about to suspend us anyway, and a prefetch that resumes
+        // mid-request on a camera that has moved on is worse than starting it
+        // again on the way back.
+        library.stopPrefetch()
     }
 
     /// Ends the running search, if there is one, and makes sure its late

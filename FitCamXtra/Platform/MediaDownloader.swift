@@ -10,12 +10,16 @@ final class MediaDownloader {
     var host: String?
     private let sink: LogSink
     private let session: URLSession
-    private var thumbnailCache: [String: UIImage] = [:]
+    private let thumbnails = ThumbnailCache()
     private var hasLoggedThumbnailFailure = false
     private var thumbnailsUnavailable = false
+    /// Work the app started by itself waits behind anything a person is
+    /// waiting on. The camera serves one thing at a time well.
+    let gate: CameraActivityGate
 
-    init(sink: LogSink) {
+    init(sink: LogSink, gate: CameraActivityGate) {
         self.sink = sink
+        self.gate = gate
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 600
@@ -55,8 +59,17 @@ final class MediaDownloader {
 
     // MARK: - Thumbnails
 
+    /// A thumbnail already on disk, without asking the camera for anything.
+    func cachedThumbnail(for file: MediaFile) -> UIImage? {
+        thumbnails.image(for: file.cameraPath)
+    }
+
+    func hasThumbnail(for file: MediaFile) -> Bool {
+        thumbnails.contains(file.cameraPath)
+    }
+
     func thumbnail(for file: MediaFile) async -> UIImage? {
-        if let cached = thumbnailCache[file.path] { return cached }
+        if let cached = thumbnails.image(for: file.cameraPath) { return cached }
         // Failures are remembered too. Without this every redraw of a card of
         // 83 clips asked again, which is a flood of requests at an embedded
         // server that is also trying to serve a download.
@@ -98,7 +111,7 @@ final class MediaDownloader {
                                      data: data)
                 return nil
             }
-            thumbnailCache[file.path] = image
+            thumbnails.store(data, image: image, for: file.cameraPath)
             return image
         } catch {
             noteThumbnailFailure(file, error.localizedDescription, url: request.url, data: nil)
@@ -135,6 +148,9 @@ final class MediaDownloader {
     func saveToPhotos(_ file: MediaFile, progress: (@MainActor (Double) -> Void)? = nil) async throws {
         guard let url = url(for: file.path) else { throw DownloadError.notConnected }
         guard await requestPhotosPermission() else { throw DownloadError.photosDenied }
+
+        await gate.beginInteractive()
+        defer { Task { await gate.endInteractive() } }
 
         sink.log(.info, .http, "Downloading \(file.displayName) (\(file.sizeLabel)) from \(url)")
 
@@ -355,6 +371,9 @@ final class MediaDownloader {
     /// The camera's file server deletes with a query flag; the CGI command is
     /// tried first because it also clears the protect bit.
     func delete(_ file: MediaFile, client: CameraClient?) async throws {
+        await gate.beginInteractive()
+        defer { Task { await gate.endInteractive() } }
+
         if let client {
             do {
                 try await client.send(.deleteFile, str: file.cameraPath)
