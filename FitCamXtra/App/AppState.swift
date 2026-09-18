@@ -549,8 +549,10 @@ final class AppState {
 
     func forgetCamera() {
         sink.log(.info, .app, "Forgetting the camera")
-        discoveryTask?.cancel()
-        discoveryTask = nil
+        // Through cancelDiscovery, so the generation moves on: cancellation is
+        // cooperative, and a search that had already found the camera would
+        // otherwise finish, reconnect, and switch auto-connect back on.
+        cancelDiscovery(reason: "the camera was forgotten")
         client = nil
         settings.attach(client: nil)
         library.attach(client: nil, host: nil)

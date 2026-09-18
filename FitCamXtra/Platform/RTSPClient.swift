@@ -30,6 +30,7 @@ public actor RTSPClient {
     private var session: String?
     private var contentBase: String?
     private var track: SDPMedia?
+    private var pendingCSeq: Int?
     private var pendingContinuation: CheckedContinuation<RTSPResponse, Error>?
     private var readLoop: Task<Void, Never>?
     private var keepAlive: Task<Void, Never>?
@@ -111,8 +112,7 @@ public actor RTSPClient {
         connection = nil
 
         if case .failed = state {} else { set(.stopped) }
-        pendingContinuation?.resume(throwing: RTSPError.cancelled)
-        pendingContinuation = nil
+        failPending(with: RTSPError.cancelled)
     }
 
     private func set(_ new: State) {
@@ -184,6 +184,9 @@ public actor RTSPClient {
     }
 
     private func handleReadFailure(_ error: Error) {
+        // Whatever was waiting on a reply is never going to get one.
+        failPending(with: error)
+
         guard case .playing = state else {
             if case .failed = state {} else {
                 set(.failed(error.localizedDescription))
@@ -200,8 +203,16 @@ public actor RTSPClient {
             switch chunk {
             case .text(let text):
                 if let response = RTSPResponse.parse(text) {
-                    pendingContinuation?.resume(returning: response)
+                    let answered = response.header("cseq").flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
+                    if let answered, let expected = pendingCSeq, answered != expected {
+                        sink?.log(.debug, .app,
+                                  "Ignoring a reply to CSeq \(answered) while waiting for \(expected)")
+                        continue
+                    }
+                    let waiting = pendingContinuation
                     pendingContinuation = nil
+                    pendingCSeq = nil
+                    waiting?.resume(returning: response)
                 }
             case .rtp(let channel, let payload):
                 // Channel 0 is RTP for the first track; 1 is its RTCP.
@@ -228,26 +239,50 @@ public actor RTSPClient {
     private func perform(_ request: RTSPRequest, timeout: TimeInterval = 8) async throws -> RTSPResponse {
         guard connection != nil else { throw RTSPError.closed }
 
-        return try await withThrowingTaskGroup(of: RTSPResponse.self) { group in
-            group.addTask { [weak self] in
-                guard let self else { throw RTSPError.cancelled }
-                return try await self.awaitResponse(for: request)
+        // The deadline has to end the waiting task, not just win the race.
+        // A task group awaits its children on the way out, so a timeout whose
+        // sibling is parked in a continuation nobody resumes never returns at
+        // all: the 8 seconds elapsed, the error was thrown, and the Live
+        // screen sat on "Starting the live stream" until the tab was left.
+        do {
+            return try await withThrowingTaskGroup(of: RTSPResponse.self) { group in
+                group.addTask { [weak self] in
+                    guard let self else { throw RTSPError.cancelled }
+                    return try await self.awaitResponse(for: request)
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(timeout))
+                    throw RTSPError.timedOut(request.method)
+                }
+                guard let result = try await group.next() else { throw RTSPError.closed }
+                group.cancelAll()
+                return result
             }
-            group.addTask {
-                try await Task.sleep(for: .seconds(timeout))
-                throw RTSPError.timedOut(request.method)
-            }
-            guard let result = try await group.next() else { throw RTSPError.closed }
-            group.cancelAll()
-            return result
+        } catch {
+            failPending(with: error)
+            throw error
         }
     }
 
     private func awaitResponse(for request: RTSPRequest) async throws -> RTSPResponse {
-        try await withCheckedThrowingContinuation { continuation in
+        let cseq = nextCSeq()
+        return try await withCheckedThrowingContinuation { continuation in
+            // A reply that arrives after its request gave up would otherwise
+            // be handed to whatever asked next: the late answer to OPTIONS
+            // resolving DESCRIBE is how a camera with a video track reports
+            // that it has none.
+            pendingCSeq = cseq
             pendingContinuation = continuation
-            send(request.encoded(cseq: nextCSeq(), session: session))
+            send(request.encoded(cseq: cseq, session: session))
         }
+    }
+
+    /// Ends whatever is waiting, once. Safe to call when nothing is.
+    private func failPending(with error: Error) {
+        guard let waiting = pendingContinuation else { return }
+        pendingContinuation = nil
+        pendingCSeq = nil
+        waiting.resume(throwing: error)
     }
 
     // MARK: - Handshake

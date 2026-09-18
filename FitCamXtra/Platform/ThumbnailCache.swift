@@ -70,7 +70,21 @@ final class ThumbnailCache: @unchecked Sendable {
         let safe = key.map { character -> Character in
             character.isLetter || character.isNumber ? character : "-"
         }
-        return "\(String(safe).suffix(60))-\(UInt(bitPattern: key.hashValue))"
+        return "\(String(safe).suffix(60))-\(Self.digest(of: key))"
+    }
+
+    /// FNV-1a, not `hashValue`: Swift seeds hashing per process, so a
+    /// `hashValue` filename is different on every launch. The cache looked for
+    /// files that could not exist, re-downloaded the card's thumbnails every
+    /// time, and wrote a duplicate of each — the exact opposite of what this
+    /// type is for.
+    private static func digest(of key: String) -> String {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in key.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 0x100_0000_01b3
+        }
+        return String(hash, radix: 36)
     }
 
     /// Oldest touched first, until the directory is back under the limit.

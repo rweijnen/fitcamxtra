@@ -7,7 +7,16 @@ import UIKit
 /// whole file and keeps everything above it.
 @MainActor
 final class MediaDownloader {
-    var host: String?
+    var host: String? {
+        didSet {
+            guard host != oldValue else { return }
+            // A different camera, or the same one on a different address, gets
+            // a fresh judgement. One timeout used to disable every thumbnail
+            // for the rest of the process.
+            thumbnailsUnavailable = false
+            hasLoggedThumbnailFailure = false
+        }
+    }
     private let sink: LogSink
     private let session: URLSession
     private let thumbnails = ThumbnailCache()
@@ -101,20 +110,23 @@ final class MediaDownloader {
                 noteThumbnailFailure(file,
                                      "the camera answered \(http?.statusCode ?? -1)",
                                      url: request.url,
-                                     data: data)
+                                     data: data,
+                                     latching: true)
                 return nil
             }
             guard let image = UIImage(data: data) else {
                 noteThumbnailFailure(file,
                                      "the \(data.count) bytes it sent are not an image",
                                      url: request.url,
-                                     data: data)
+                                     data: data,
+                                     latching: true)
                 return nil
             }
             thumbnails.store(data, image: image, for: file.cameraPath)
             return image
         } catch {
-            noteThumbnailFailure(file, error.localizedDescription, url: request.url, data: nil)
+            noteThumbnailFailure(file, error.localizedDescription,
+                                 url: request.url, data: nil, latching: false)
             return nil
         }
     }
@@ -125,8 +137,17 @@ final class MediaDownloader {
     /// image is worth recording. Logged once per connection rather than once
     /// per tile, because a full card would otherwise flood the log with the
     /// same line.
-    private func noteThumbnailFailure(_ file: MediaFile, _ reason: String, url: URL?, data: Data?) {
-        thumbnailsUnavailable = true
+    private func noteThumbnailFailure(
+        _ file: MediaFile,
+        _ reason: String,
+        url: URL?,
+        data: Data?,
+        latching: Bool
+    ) {
+        // Only a camera that answered and refused is worth giving up on. A
+        // timeout says the link was busy, which it often is while a clip is
+        // downloading, and the next tile deserves its own try.
+        thumbnailsUnavailable = latching
         guard !hasLoggedThumbnailFailure else { return }
         hasLoggedThumbnailFailure = true
 
@@ -250,6 +271,12 @@ final class MediaDownloader {
             .appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: destination.path, contents: nil)
 
+        // Bytes on disk, updated as they land rather than on return: an
+            // attempt that throws still wrote what it wrote, and the retry has
+            // to know how much that was. Reading it only from the return value
+            // meant a dropped download resumed from zero, which made the whole
+            // retry path dead code.
+        let counter = ByteCounter()
         var written: Int64 = 0
         var lastResponse: URLResponse?
         var attempt = 0
@@ -262,12 +289,14 @@ final class MediaDownloader {
                     to: destination,
                     startingAt: written,
                     expected: expected,
-                    progress: progress
+                    progress: progress,
+                    landed: counter
                 )
                 lastResponse = response
                 written = bytesWritten
                 break
             } catch {
+                written = counter.value
                 let resumable = written > 0 && attempt <= maxDownloadAttempts
                 guard resumable else {
                     try? FileManager.default.removeItem(at: destination)
@@ -284,13 +313,20 @@ final class MediaDownloader {
         return (destination, lastResponse)
     }
 
+    /// How much of the file is on disk. A reference so a failed attempt can
+    /// still report what it managed to write.
+    private final class ByteCounter {
+        var value: Int64 = 0
+    }
+
     /// One attempt, appending to what is already on disk.
     private func appendDownload(
         from url: URL,
         to destination: URL,
         startingAt offset: Int64,
         expected: Int64,
-        progress: (@MainActor (Double) -> Void)?
+        progress: (@MainActor (Double) -> Void)?,
+        landed: ByteCounter
     ) async throws -> (URLResponse, Int64) {
         var request = URLRequest(url: url)
         if offset > 0 {
@@ -307,6 +343,7 @@ final class MediaDownloader {
             sink.log(.info, .http, "The camera ignored the range request; starting again")
             written = 0
         }
+        landed.value = written
 
         let handle = try FileHandle(forWritingTo: destination)
         do {
@@ -330,6 +367,7 @@ final class MediaDownloader {
 
                 try handle.write(contentsOf: buffer)
                 written += Int64(buffer.count)
+                landed.value = written
                 buffer.removeAll(keepingCapacity: true)
 
                 guard total > 0 else { continue }
@@ -343,10 +381,13 @@ final class MediaDownloader {
             if !buffer.isEmpty {
                 try handle.write(contentsOf: buffer)
                 written += Int64(buffer.count)
+                landed.value = written
             }
             try handle.close()
         } catch {
-            try? handle.write(contentsOf: buffer)
+            // The tail buffer is dropped rather than flushed: the counter is
+            // what the next attempt truncates to, and a write that is not
+            // counted would be overwritten anyway.
             try? handle.close()
             throw error
         }
