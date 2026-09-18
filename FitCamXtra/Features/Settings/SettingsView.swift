@@ -122,14 +122,13 @@ struct SettingsView: View {
                     showNetwork = true
                 }
                 divider
-                plainRow("Wi-Fi name",
-                         value: state.settings.accessPoint?.ssid ?? state.remembered.lastSSID ?? "Not reported",
-                         action: nil)
-                divider
-                plainRow("Access point",
-                         value: state.remembered.ssidPrefix.isEmpty
-                             ? "Not reported yet"
-                             : state.remembered.ssidPrefix,
+                // One row, not two: both of these were the camera's own
+                // network name, both usually said "Not reported", and nothing
+                // on screen said which was which.
+                plainRow("Camera's wifi",
+                         value: state.settings.accessPoint?.ssid
+                             ?? state.remembered.lastSSID
+                             ?? (state.remembered.ssidPrefix.isEmpty ? "Not reported" : state.remembered.ssidPrefix),
                          action: nil)
                 divider
                 plainRow("Diagnostics", value: "\(state.diagnostics.entries.count) entries") {

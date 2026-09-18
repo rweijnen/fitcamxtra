@@ -50,7 +50,18 @@ public struct CameraEvent: Sendable, Identifiable, Equatable {
         self.isLocked = isLocked
     }
 
-    public var title: String { trigger.label }
+    /// What the card leads with. The trigger is always "Locked clip" on this
+    /// firmware — the listing says a clip is protected and never what
+    /// protected it — so every card carried the same title next to a badge
+    /// that already said LOCKED, and the one thing that tells them apart was
+    /// demoted to the subtitle.
+    public var title: String {
+        guard let recordedAt else { return trigger.label }
+        return recordedAt.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    /// The trigger, for where it is worth naming separately.
+    public var triggerLabel: String { trigger.label }
 
     public var timeLabel: String {
         guard let recordedAt else { return "Time not reported" }

@@ -279,6 +279,34 @@ final class MediaDownloader {
         sink.log(.info, .app, "Saved \(file.displayName) to Photos")
     }
 
+    /// Downloads a clip to a temporary file and hands back its URL, for the
+    /// share sheet. The file keeps the camera's own name so it arrives
+    /// recognisable, and lives in the caches directory, which the system
+    /// reclaims on its own.
+    func exportForSharing(
+        _ file: MediaFile,
+        progress: (@MainActor (Double) -> Void)? = nil
+    ) async throws -> URL {
+        guard let url = url(for: file.path) else { throw DownloadError.notConnected }
+
+        await gate.beginInteractive()
+        defer { Task { await gate.endInteractive() } }
+
+        sink.log(.info, .http, "Downloading \(file.displayName) to share")
+        let (temporaryURL, response) = try await downloadStreaming(from: url,
+                                                                   expected: file.byteCount,
+                                                                   progress: progress)
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw DownloadError.badResponse(http.statusCode)
+        }
+
+        let named = FileManager.default.temporaryDirectory
+            .appendingPathComponent(file.displayName)
+        try? FileManager.default.removeItem(at: named)
+        try FileManager.default.moveItem(at: temporaryURL, to: named)
+        return named
+    }
+
     /// Saves a whole incident: the locked clip and the neighbours chosen.
     func saveIncident(
         _ bundle: IncidentBundle,

@@ -201,6 +201,63 @@ struct NetworkView: View {
         )
     }
 
+    @ViewBuilder
+    private var networkPicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Eyebrow(text: "Networks the camera can see")
+                Spacer()
+                Button(state.settings.isScanningNetworks ? "Scanning..." : "Scan") {
+                    Task { await state.settings.scanNetworks() }
+                }
+                .font(Typo.sans(.label, .semibold))
+                .foregroundStyle(Palette.accent)
+                .disabled(state.settings.isScanningNetworks)
+                .frame(minHeight: 44)
+            }
+
+            if state.settings.visibleNetworks.isEmpty {
+                Text(state.settings.isScanningNetworks
+                     ? "The camera is looking. This takes a couple of seconds."
+                     : "Tap Scan and the camera will report the networks in range.")
+                    .font(Typo.mono(.micro))
+                    .foregroundStyle(Palette.inkQuaternary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ForEach(state.settings.visibleNetworks) { network in
+                    Button {
+                        homeSSID = network.ssid
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(network.ssid)
+                                .font(Typo.mono(.label))
+                                .foregroundStyle(homeSSID == network.ssid ? Palette.accent : Palette.ink)
+                                .lineLimit(1)
+                            Spacer()
+                            if let signal = network.signal {
+                                Text("\(signal)")
+                                    .font(Typo.mono(.micro))
+                                    .foregroundStyle(Palette.inkQuaternary)
+                            }
+                            if homeSSID == network.ssid {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(Palette.accent)
+                            }
+                        }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Join \(network.ssid)")
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .cardSurface()
+    }
+
     /// Nil when what has been typed can actually be stored. The rules live
     /// in CameraClient so the screen and the command cannot disagree.
     private var credentialProblem: String? {
@@ -219,6 +276,12 @@ struct NetworkView: View {
 
     private var stationFields: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // The camera can see the networks around it and the phone cannot,
+            // so the list comes from the camera. Typing a name that has to
+            // match exactly is how someone ends up with a camera on a network
+            // that does not exist.
+            networkPicker
+
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Eyebrow(text: "Home SSID")

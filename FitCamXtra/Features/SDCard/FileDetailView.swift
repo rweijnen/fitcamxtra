@@ -17,6 +17,11 @@ struct FileDetailView: View {
     /// iOS will not ask again once Photos access is refused, so the only way
     /// out of that state is the Settings app.
     @State private var photosRefused = false
+    /// A clip on its way to someone else. Saving to Photos and then leaving
+    /// the app is a long way round to send an insurer a video.
+    @State private var sharePayload: SharePayload?
+    @State private var shareLabel = "Share"
+    @State private var isSharing = false
 
     var body: some View {
         ZStack {
@@ -68,6 +73,9 @@ struct FileDetailView: View {
         }
         .task { await load() }
         .onDisappear { player?.pause() }
+        .sheet(item: $sharePayload) { payload in
+            ShareSheet(items: [payload.url])
+        }
         .confirmationDialog(
             "Delete this file?",
             isPresented: $showDeleteConfirm,
@@ -188,12 +196,33 @@ struct FileDetailView: View {
                 )
         }
         .buttonStyle(.plain)
-        .disabled(isBusy)
+        .disabled(isBusy || isSharing)
         .opacity(isBusy ? 0.7 : 1)
+        .accessibilityLabel("Save this clip to Photos")
+    }
+
+    /// Straight to Messages, Mail or anywhere else. Saving to Photos and then
+    /// leaving the app is a long way round to send someone a clip.
+    private var shareButton: some View {
+        Button {
+            Task { await share() }
+        } label: {
+            Label(shareLabel, systemImage: "square.and.arrow.up")
+                .font(Typo.sans(.body, .semibold))
+                .foregroundStyle(Palette.accent)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: 44)
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy || isSharing)
+        .opacity(isSharing ? 0.7 : 1)
+        .accessibilityLabel("Share this clip")
     }
 
     private var actions: some View {
         HStack(spacing: 10) {
+            shareButton
+
             Button {
                 showDeleteConfirm = true
             } label: {
@@ -222,6 +251,22 @@ struct FileDetailView: View {
         } else {
             image = await state.downloader.thumbnail(for: file)
         }
+    }
+
+    private func share() async {
+        isSharing = true
+        shareLabel = "Preparing..."
+        failure = nil
+        do {
+            let url = try await state.downloader.exportForSharing(file) { fraction in
+                shareLabel = "Preparing \(Int(fraction * 100))%"
+            }
+            sharePayload = SharePayload(url: url)
+        } catch {
+            failure = error.localizedDescription
+        }
+        shareLabel = "Share"
+        isSharing = false
     }
 
     private func save() async {

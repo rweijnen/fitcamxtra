@@ -119,10 +119,13 @@ extension CameraError: LocalizedError {
             return "That address refused the connection."
         case .malformedResponse:
             return "The camera sent a reply the app could not read."
-        case .commandFailed(let command, let status):
-            return "Camera command \(command) failed with status \(status)."
-        case .commandUnsupported(let command):
-            return "This camera does not support command \(command)."
+        case .commandFailed:
+            // The command number belongs in the diagnostics, where it is
+            // logged, not on screen. It tells the person reading it nothing
+            // they can act on.
+            return "The camera refused that."
+        case .commandUnsupported:
+            return "This camera does not support that."
         case .notConnected:
             return "Not connected to the camera."
         case .credentialsRefused(let reason):

@@ -268,8 +268,16 @@ final class MediaLibrary {
     /// The clips around a locked one. Loop recording writes roughly one-minute
     /// chunks and the button only locks the chunk it landed in, so the start or
     /// the aftermath often sits in a neighbour.
-    func bundle(for event: CameraEvent, range: IncidentBundle.Range) -> IncidentBundle {
-        IncidentBundle.build(event: event, range: range, files: files)
+    /// - Parameter loopMinutes: the camera's Loop Record setting. Neighbour
+    ///   matching is by start time, so the clip length has to be the real one:
+    ///   at three minutes a hardcoded sixty seconds matches nothing, and the
+    ///   screen then blames the loop for overwriting clips that are still
+    ///   sitting on the card.
+    func bundle(for event: CameraEvent,
+                range: IncidentBundle.Range,
+                loopMinutes: Int? = nil) -> IncidentBundle {
+        let length = loopMinutes.map { TimeInterval(max($0, 1) * 60) } ?? 60
+        return IncidentBundle.build(event: event, range: range, files: files, segmentLength: length)
     }
 }
 

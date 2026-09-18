@@ -22,7 +22,12 @@ struct IncidentView: View {
     }
 
     private var bundle: IncidentBundle {
-        state.library.bundle(for: event, range: range)
+        // The camera's own loop length, when it has reported one: clips are
+        // matched by start time, so assuming a minute when the camera writes
+        // three finds nothing at all.
+        state.library.bundle(for: event,
+                             range: range,
+                             loopMinutes: state.settings.snapshot.value(for: .fileDuration))
     }
 
     var body: some View {

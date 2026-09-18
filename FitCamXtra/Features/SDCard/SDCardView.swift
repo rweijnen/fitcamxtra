@@ -135,6 +135,19 @@ struct SDCardView: View {
 
             Spacer()
 
+            if selecting {
+                // Freeing space meant tapping every tile. On an 83-clip card
+                // that is 83 taps to do the one thing the screen is for.
+                Button(selected.count == visibleFiles.count ? "None" : "All") {
+                    selected = selected.count == visibleFiles.count
+                        ? []
+                        : Set(visibleFiles.map(\.id))
+                }
+                .font(Typo.sans(.body, .semibold))
+                .foregroundStyle(Palette.accent)
+                .frame(minHeight: 44)
+            }
+
             if library.isShowingCachedListing {
                 Text(library.listingFetchedAt.map { "From \($0.formatted(date: .omitted, time: .shortened))" }
                      ?? "From last visit")
@@ -244,6 +257,15 @@ struct SDCardView: View {
 
     // MARK: - Grid
 
+    private func selectDay(_ files: [MediaFile]) {
+        let ids = Set(files.map(\.id))
+        if ids.isSubset(of: selected) {
+            selected.subtract(ids)
+        } else {
+            selected.formUnion(ids)
+        }
+    }
+
     private func dayGroup(_ day: Date?, files: [MediaFile]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
@@ -251,9 +273,19 @@ struct SDCardView: View {
                     .font(Typo.sans(.label, .semibold))
                     .foregroundStyle(Palette.ink)
                 Spacer()
-                Text("\(files.count) item\(files.count == 1 ? "" : "s") - \(byteLabel(files.reduce(0) { $0 + $1.byteCount }))")
-                    .font(Typo.mono(.detail))
-                    .foregroundStyle(Palette.inkQuaternary)
+
+                if selecting {
+                    // A day is the unit people actually think in when they
+                    // are clearing space.
+                    Button("Select day") { selectDay(files) }
+                        .font(Typo.sans(.detail, .semibold))
+                        .foregroundStyle(Palette.accent)
+                        .frame(minHeight: 44)
+                } else {
+                    Text("\(files.count) item\(files.count == 1 ? "" : "s") - \(byteLabel(files.reduce(0) { $0 + $1.byteCount }))")
+                        .font(Typo.mono(.detail))
+                        .foregroundStyle(Palette.inkQuaternary)
+                }
             }
 
             LazyVGrid(columns: columns, spacing: 6) {
@@ -278,6 +310,11 @@ struct SDCardView: View {
                 }
             }
         }
+    }
+
+    /// What the current filter is showing, which is what "All" should mean.
+    private var visibleFiles: [MediaFile] {
+        library.filesByDay(filter: filter).flatMap(\.files)
     }
 
     private var selectedLockedCount: Int {
