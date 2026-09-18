@@ -63,6 +63,13 @@ public struct CameraEvent: Sendable, Identifiable, Equatable {
     /// The trigger, for where it is worth naming separately.
     public var triggerLabel: String { trigger.label }
 
+    /// How long the clip runs, when the listing said.
+    public var durationLabel: String? {
+        guard let duration, duration > 0 else { return nil }
+        let total = Int(duration.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
     public var timeLabel: String {
         guard let recordedAt else { return "Time not reported" }
         return recordedAt.formatted(date: .abbreviated, time: .shortened)

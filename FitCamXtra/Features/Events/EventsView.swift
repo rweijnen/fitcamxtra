@@ -172,7 +172,9 @@ struct EventCard: View {
                     Text(event.title)
                         .font(Typo.sans(.cardTitle, .semibold))
                         .foregroundStyle(Palette.ink)
-                    Text(event.timeLabel)
+                    // The title is the time now, so the second line carries
+                    // what the clip is instead of repeating it.
+                    Text(event.durationLabel ?? event.triggerLabel)
                         .font(Typo.sans(.label))
                         .foregroundStyle(Palette.inkQuaternary)
                 }
