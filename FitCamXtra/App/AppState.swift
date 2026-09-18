@@ -507,9 +507,7 @@ final class AppState {
                 remembered.homeSSID = ssid
             case .accessPoint:
                 sink.log(.info, .network, "Switching the camera back to its own access point")
-                try await client.setNetworkMode(.accessPoint)
-                try await client.send(.saveConfig)
-                try await client.send(.rebootWifi)
+                try await client.applyAccessPointMode()
             }
 
             networkMode = mode

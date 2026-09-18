@@ -112,29 +112,67 @@ public actor CameraClient {
         try await send(.setNetworkMode, par: mode.rawValue)
     }
 
+    /// Back to the camera's own access point: the same sequence as station
+    /// mode with the mode flipped, saved before the radio restarts.
+    public func applyAccessPointMode() async throws {
+        try await send(.setNetworkMode, par: NetworkMode.accessPoint.rawValue)
+        try await send(.saveConfig)
+        try await send(.rebootWifi)
+    }
+
     /// Credentials, then the mode flip, then the save that makes it survive a
     /// reboot on patched firmware, then a wifi restart.
     ///
     /// Confirmed against the camera: 3032 takes `str=<ssid>:<passphrase>`,
-    /// separated by a colon, followed by 3033, 3021 and 3018 in that order.
-    /// The app previously sent a tab, which nothing supported.
+    /// separated by a colon, then 3033 with the mode, then 3021 to save it to
+    /// flash, then 3018 to restart the radio. The order matters — saving
+    /// before restarting is what makes the setting survive.
     ///
-    /// An SSID containing a colon cannot be expressed this way, and the
-    /// camera has no other form we know of, so it is refused rather than sent
-    /// as something the camera would split in the wrong place — the failure
-    /// this avoids is the camera leaving its own network holding credentials
-    /// it cannot use, which takes a physical reset to undo.
+    /// The firmware enforces its own limits and **fails silently** when they
+    /// are broken: the handler wants exactly two colon-separated fields, an
+    /// SSID of at most 31 characters and a passphrase of at most 25, and it
+    /// logs and returns without setting anything otherwise. Since the next
+    /// command flips the mode regardless, a silent rejection would leave the
+    /// camera off its own access point holding credentials it never stored,
+    /// recoverable only with a physical factory reset. So everything is
+    /// checked here, and nothing is sent unless all of it passes.
     public func applyStationMode(ssid: String, passphrase: String) async throws {
-        guard !ssid.contains(":") else {
-            throw CameraError.malformedResponse(
-                "This network's name contains a colon, which the camera uses to "
-                + "separate the name from the password. It cannot be set from here."
-            )
-        }
+        try Self.validateStationCredentials(ssid: ssid, passphrase: passphrase)
+
         try await send(.setStationCredentials, str: ssid + ":" + passphrase)
         try await send(.setNetworkMode, par: NetworkMode.station.rawValue)
         try await send(.saveConfig)
         try await send(.rebootWifi)
+    }
+
+    /// The limits the firmware imposes, as a check the UI can also run before
+    /// offering to apply anything.
+    public static let maximumStationSSIDLength = 31
+    public static let maximumStationPassphraseLength = 25
+
+    public static func validateStationCredentials(ssid: String, passphrase: String) throws {
+        guard !ssid.isEmpty else {
+            throw CameraError.credentialsRefused("Enter the name of the network to join.")
+        }
+        guard !ssid.contains(":"), !passphrase.contains(":") else {
+            throw CameraError.credentialsRefused(
+                "The camera separates the network name from the password with a colon, "
+                + "so neither can contain one. This network cannot be set from here."
+            )
+        }
+        guard ssid.count <= maximumStationSSIDLength else {
+            throw CameraError.credentialsRefused(
+                "The camera stores at most \(maximumStationSSIDLength) characters of a "
+                + "network name, and this one is \(ssid.count)."
+            )
+        }
+        guard passphrase.count <= maximumStationPassphraseLength else {
+            throw CameraError.credentialsRefused(
+                "The camera stores at most \(maximumStationPassphraseLength) characters of a "
+                + "password, and this one is \(passphrase.count). This camera cannot join "
+                + "that network."
+            )
+        }
     }
 }
 

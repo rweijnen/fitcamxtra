@@ -201,12 +201,36 @@ struct NetworkView: View {
         )
     }
 
+    /// Nil when what has been typed can actually be stored. The rules live
+    /// in CameraClient so the screen and the command cannot disagree.
+    private var credentialProblem: String? {
+        guard mode == .station else { return nil }
+        do {
+            try CameraClient.validateStationCredentials(ssid: homeSSID, passphrase: passphrase)
+            return nil
+        } catch let error as CameraError {
+            return homeSSID.isEmpty ? nil : error.errorDescription
+        } catch {
+            return nil
+        }
+    }
+
     // MARK: - Station
 
     private var stationFields: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Eyebrow(text: "Home SSID")
+                HStack {
+                    Eyebrow(text: "Home SSID")
+                    Spacer()
+                    // The camera's limits are shown rather than discovered:
+                    // it rejects an over-long value silently and then the mode
+                    // switch goes ahead anyway.
+                    Text("\(homeSSID.count)/\(CameraClient.maximumStationSSIDLength)")
+                        .font(Typo.mono(.micro))
+                        .foregroundStyle(homeSSID.count > CameraClient.maximumStationSSIDLength
+                                         ? Palette.destructiveText : Palette.inkQuaternary)
+                }
                 TextField("Your wifi name", text: $homeSSID)
                     .font(Typo.mono(.cardTitle))
                     .foregroundStyle(Palette.ink)
@@ -221,7 +245,14 @@ struct NetworkView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Eyebrow(text: "Passphrase")
+                HStack {
+                    Eyebrow(text: "Passphrase")
+                    Spacer()
+                    Text("\(passphrase.count)/\(CameraClient.maximumStationPassphraseLength)")
+                        .font(Typo.mono(.micro))
+                        .foregroundStyle(passphrase.count > CameraClient.maximumStationPassphraseLength
+                                         ? Palette.destructiveText : Palette.inkQuaternary)
+                }
                 SecureField("Your wifi password", text: $passphrase)
                     .font(Typo.mono(.cardTitle))
                     .foregroundStyle(Palette.ink)
@@ -235,12 +266,21 @@ struct NetworkView: View {
                     )
             }
 
-            Text("After applying, the camera restarts its wifi and drops off this network, so rejoin your home wifi and the app will find it again.")
+            if let problem = credentialProblem {
+                Text(problem)
+                    .font(Typo.mono(.micro))
+                    .foregroundStyle(Palette.destructiveText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text("The camera stores up to \(CameraClient.maximumStationSSIDLength) characters of a network name and \(CameraClient.maximumStationPassphraseLength) of a password, and neither can contain a colon. After applying, it restarts its wifi and drops off this network, so rejoin your home wifi and the app will find it again.")
                 .font(Typo.mono(.micro))
                 .foregroundStyle(Palette.inkQuaternary)
                 .fixedSize(horizontal: false, vertical: true)
 
             applyButton
+                .disabled(credentialProblem != nil)
+                .opacity(credentialProblem == nil ? 1 : 0.5)
         }
     }
 

@@ -103,6 +103,9 @@ public enum CameraError: Error, Sendable, Equatable {
     case commandFailed(command: Int, status: Int)
     case commandUnsupported(command: Int)
     case notConnected
+    /// The credentials cannot be expressed in the form the camera accepts, so
+    /// nothing was sent.
+    case credentialsRefused(String)
 }
 
 extension CameraError: LocalizedError {
@@ -122,6 +125,8 @@ extension CameraError: LocalizedError {
             return "This camera does not support command \(command)."
         case .notConnected:
             return "Not connected to the camera."
+        case .credentialsRefused(let reason):
+            return reason
         }
     }
 }

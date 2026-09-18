@@ -120,8 +120,24 @@ cmd=3021            # save
 cmd=3018            # restart the wifi
 ```
 
-The separator is a colon, sent literally rather than percent-encoded. An SSID
-containing a colon has no representation here.
+The separator is a colon, sent literally rather than percent-encoded, and the
+order matters: 3021 saves to SYSP flash, so it must come before 3018 restarts
+the radio. Returning to the access point is the same sequence with
+`cmd=3033&par=0`.
+
+**The handler enforces limits and fails silently.** It wants exactly two
+colon-separated fields, an SSID of at most 31 characters and a passphrase of at
+most 25; anything else is logged on the device and returns without storing
+anything. Since the mode flip that follows goes ahead regardless, a silent
+rejection leaves the camera off its own access point with credentials it never
+kept — recoverable only by factory-resetting the device. The app checks all of
+it before sending the first command.
+
+A passphrase longer than 25 characters cannot be stored at all, so this camera
+cannot join that network. Worth knowing before relying on station mode.
+
+On patched firmware the mode field is no longer zeroed at boot, so the camera
+comes back up in station mode by itself.
 
 **The camera answers ICMP echo.** Confirmed on hardware. Discovery pings the
 range first and asks only the addresses that reply for `cmd=3012`, which turns
