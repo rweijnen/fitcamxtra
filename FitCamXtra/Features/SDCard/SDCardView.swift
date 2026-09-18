@@ -5,6 +5,7 @@ struct SDCardView: View {
 
     @State private var filter: FileFilter = .all
     @State private var selecting = false
+    @State private var showBulkDeleteConfirm = false
     @State private var selected: Set<String> = []
     @State private var openFile: MediaFile?
     @State private var busy: String?
@@ -279,6 +280,10 @@ struct SDCardView: View {
         }
     }
 
+    private var selectedLockedCount: Int {
+        library.files.filter { selected.contains($0.id) && $0.isLocked }.count
+    }
+
     // MARK: - Selection
 
     private var actionBar: some View {
@@ -300,7 +305,7 @@ struct SDCardView: View {
             .disabled(busy != nil)
 
             Button {
-                Task { await deleteSelected() }
+                showBulkDeleteConfirm = true
             } label: {
                 Text("Delete")
                     .font(Typo.sans(.body, .semibold))
@@ -323,6 +328,25 @@ struct SDCardView: View {
         )
         .padding(.horizontal, Metrics.gutter)
         .padding(.bottom, 12)
+        // The single-file path has always confirmed, and the camera settings
+        // confirm; only the one that erases many clips at once did not, and
+        // it sits next to Save with no undo behind it.
+        .confirmationDialog(
+            selectedLockedCount > 0
+                ? "Delete \(selected.count) clips, including \(selectedLockedCount) locked?"
+                : "Delete \(selected.count) clips?",
+            isPresented: $showBulkDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Delete \(selected.count)", role: .destructive) {
+                Task { await deleteSelected() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(selectedLockedCount > 0
+                 ? "Locked clips are the ones the button or the G-sensor protected. This erases them from the card, and nothing on the phone keeps a copy unless it was saved to Photos."
+                 : "This erases them from the card. Nothing on the phone keeps a copy unless it was saved to Photos.")
+        }
     }
 
     private func saveSelected() async {
@@ -347,14 +371,26 @@ struct SDCardView: View {
     private func deleteSelected() async {
         let files = library.files.filter { selected.contains($0.id) }
         failure = nil
+        var deleted = 0
+        var firstFailure: String?
+
         for (index, file) in files.enumerated() {
             busy = "Deleting \(index + 1) of \(files.count)"
             do {
                 try await state.downloader.delete(file, client: state.cameraClient())
+                deleted += 1
             } catch {
-                failure = error.localizedDescription
-                break
+                // Carry on rather than stopping at the first one: the rest
+                // were asked for too, and a half-done selection with one red
+                // line explains nothing about which clips are still there.
+                if firstFailure == nil { firstFailure = error.localizedDescription }
             }
+        }
+
+        if let firstFailure {
+            failure = deleted == 0
+                ? "Nothing was deleted: \(firstFailure)"
+                : "Deleted \(deleted) of \(files.count). The rest failed: \(firstFailure)"
         }
         busy = nil
         selected.removeAll()

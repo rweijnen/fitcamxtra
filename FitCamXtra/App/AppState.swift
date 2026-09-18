@@ -555,6 +555,15 @@ final class AppState {
         let ok = await settings.runAction(setting, par: par)
         guard ok else { return }
 
+        if setting.command == .formatSDCard {
+            // The card is empty now. Without this the app kept listing every
+            // clip that had just been erased, from its own cache.
+            library.forgetCache()
+            await library.loadFiles()
+            await refreshStatus()
+            return
+        }
+
         if setting.command == .factoryReset {
             // A factory reset puts the camera back on its own access point.
             networkMode = .accessPoint
@@ -569,6 +578,7 @@ final class AppState {
 
     func forgetCamera() {
         sink.log(.info, .app, "Forgetting the camera")
+        library.forgetCache()
         // Through cancelDiscovery, so the generation moves on: cancellation is
         // cooperative, and a search that had already found the camera would
         // otherwise finish, reconnect, and switch auto-connect back on.

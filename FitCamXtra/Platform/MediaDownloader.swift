@@ -80,6 +80,14 @@ final class MediaDownloader {
 
     // MARK: - Thumbnails
 
+    /// Throws away every cached thumbnail. Used when a camera is forgotten:
+    /// these are pictures of the user's own driving, and Forget should mean it.
+    func clearThumbnails() {
+        thumbnails.clear()
+        thumbnailsUnavailable = false
+        hasLoggedThumbnailFailure = false
+    }
+
     /// A thumbnail already on disk, without asking the camera for anything.
     func cachedThumbnail(for file: MediaFile) -> UIImage? {
         thumbnails.image(for: file.cameraPath)

@@ -33,6 +33,21 @@ final class MediaLibrary {
         self.downloads = downloads
     }
 
+    /// Drops everything kept about the camera that was just forgotten: the
+    /// listing and the thumbnails, both of which are its own footage and both
+    /// of which used to survive a Forget and come back on the next connection.
+    func forgetCache() {
+        cache?.clear()
+        downloads.clearThumbnails()
+        cache = nil
+        files = []
+        events = []
+        unreadEventIDs = []
+        isShowingCachedListing = false
+        listingFetchedAt = nil
+        sink.log(.info, .app, "Cleared the remembered listing and thumbnails")
+    }
+
     func attach(client: CameraClient?, host: String?) {
         self.client = client
         downloads.host = host
