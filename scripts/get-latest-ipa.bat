@@ -13,6 +13,7 @@ rem installs as it is. Nothing here re-signs anything.
 
 set REPO=rweijnen/fitcamxtra
 set WORKFLOW=iOS build
+set WORKFLOW_FILE=ios-build.yml
 set ARTIFACT=FitCamXtra-adhoc-ipa
 set DEST=%~dp0..\builds
 
@@ -36,9 +37,15 @@ set ATTEMPT=0
 set /a ATTEMPT+=1
 set RUNID=
 set BUILD=
-for /f "usebackq tokens=1,2" %%N in (`gh run list -R %REPO% --workflow "%WORKFLOW%" --branch main --status success --limit 1 --json databaseId^,number --template "{{range .}}{{.number}} {{.databaseId}}{{end}}" 2^>nul`) do (
-  set BUILD=%%N
-  set RUNID=%%O
+set FIELD=0
+rem Read with --jq rather than --template: a Go template renders the run id as
+rem a float, so it came out as 3.5359211102e+10 and no download could use it.
+rem The workflow is named by its file, which spares gh a lookup against an
+rem endpoint that has been timing out here.
+for /f "usebackq delims=" %%V in (`gh run list -R %REPO% --workflow %WORKFLOW_FILE% --branch main --status success --limit 1 --json databaseId^,number --jq ".[0].databaseId, .[0].number" 2^>nul`) do (
+  set /a FIELD+=1
+  if !FIELD!==1 set RUNID=%%V
+  if !FIELD!==2 set BUILD=%%V
 )
 
 if not "%RUNID%"=="" if not "%BUILD%"=="" goto :found
