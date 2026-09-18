@@ -37,7 +37,7 @@ targets:
         UIUserInterfaceStyle: Dark
         ITSAppUsesNonExemptEncryption: false
         NSLocalNetworkUsageDescription: >-
-          FitCamXtra looks for your dashcam on the local network. Nothing leaves the car.
+          FitCamXtra looks for your dashcam on the local network so it can connect to it.
         NSPhotoLibraryAddUsageDescription: >-
           FitCamXtra saves the clips and snapshots you choose to your photo library.
         NSAppTransportSecurity:

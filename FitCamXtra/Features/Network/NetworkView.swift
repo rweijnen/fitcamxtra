@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Switches the camera between running its own access point and joining your
-/// home wifi. This is the feature the stock app does not have.
+/// home wifi.
 struct NetworkView: View {
     @Environment(AppState.self) private var state
     @Environment(\.dismiss) private var dismiss
@@ -235,7 +235,7 @@ struct NetworkView: View {
                     )
             }
 
-            Text("The passphrase is sent straight to the camera and is not stored on the phone. After applying, the camera restarts its wifi and drops off this network, so rejoin your home wifi and the app will find it again.")
+            Text("After applying, the camera restarts its wifi and drops off this network, so rejoin your home wifi and the app will find it again.")
                 .font(Typo.mono(.micro))
                 .foregroundStyle(Palette.inkQuaternary)
                 .fixedSize(horizontal: false, vertical: true)

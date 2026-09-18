@@ -103,7 +103,7 @@ public enum SettingsRegistry {
             id: "bitrate",
             group: .video,
             label: "Record Bitrate",
-            hint: "Higher is clearer and bigger. The stock app has no such control.",
+            hint: "Higher is clearer and bigger, and fills the card faster.",
             command: .recordBitrate,
             // Default 8000, and Validate_UI_configuration rejects above 32000.
             // Confirmed on hardware: cmd=3014 reports 2022 as 8000.

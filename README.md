@@ -2,11 +2,12 @@
 
 ![AI assisted](https://img.shields.io/badge/AI-assisted-blue)
 
-A focused, modern iOS companion app for the FitCamX wifi dashcam. It replaces the
-multi-brand stock app with something clean, dark and one-handed, and adds the two
-things the stock app lacks: a painless connection flow (no more fighting wireless
-CarPlay for the phone's wifi) and **station mode**, so the camera joins your home
-network instead of forcing your phone onto its access point.
+A focused iOS companion app for the FitCamX wifi dashcam: clean, dark and
+one-handed. It finds the camera by itself and reconnects when the network
+changes, and it can put the camera into **station mode**, so it joins your home
+network rather than needing your phone on its access point.
+
+Not affiliated with or endorsed by FitCamX.
 
 > Status: all five surfaces are built and running on TestFlight. Some camera setting
 > mappings are marked provisional in code, meaning the command number is confirmed from
@@ -22,8 +23,7 @@ network instead of forcing your phone onto its access point.
 - **SD card** - the whole card, grouped by day, with filters, multi-select, saving
   and deleting.
 - **Network** - switch the camera between its own access point and your home wifi.
-- **Settings** - the camera's settings, plus a record-bitrate control the stock app
-  does not offer.
+- **Settings** - the camera's settings, including a record-bitrate control.
 - **Diagnostics** - an in-app log of every probe, command and reply, shareable as
   text. For a local-network app the interesting failures are silent ones.
 
