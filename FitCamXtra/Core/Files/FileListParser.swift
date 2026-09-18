@@ -61,6 +61,7 @@ public enum FileListParser {
         return MediaFile(
             id: httpPath(from: rawPath),
             path: httpPath(from: rawPath),
+            cameraPath: rawPath,
             recordedAt: date,
             byteCount: size,
             kind: kind,

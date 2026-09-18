@@ -45,8 +45,31 @@ public actor RTSPClient {
         self.sink = sink
     }
 
+    /// Built from the URL the camera itself reported. The host is still taken
+    /// from the address we are connected on, because the camera reports the
+    /// address it believes it has, which is not always the one that answered.
+    public init(url: String, fallbackHost: String? = nil, sink: LogSink? = nil) {
+        let parsed = URL(string: url)
+        self.host = fallbackHost ?? parsed?.host ?? url
+        self.port = UInt16(parsed?.port ?? 554)
+        let reportedPath = parsed?.path ?? ""
+        self.path = reportedPath.isEmpty || reportedPath == "/"
+            ? "xxx.mov"
+            : String(reportedPath.drop(while: { $0 == "/" }))
+        self.sink = sink
+    }
+
     private var baseURL: String {
         "rtsp://\(host):\(port)/\(path)"
+    }
+
+    /// What PLAY and TEARDOWN address. RFC 2326 puts aggregate control at the
+    /// Content-Base the server gave us; LIVE555 answers 404 for a URL that is
+    /// not exactly one it knows, so its own answer is used in preference to
+    /// the one we assembled.
+    private var aggregateURL: String {
+        guard let base = contentBase, !base.isEmpty else { return baseURL }
+        return base.hasSuffix("/") ? String(base.dropLast()) : base
     }
 
     // MARK: - Lifecycle
@@ -79,7 +102,7 @@ public actor RTSPClient {
         readLoop?.cancel(); readLoop = nil
 
         if let session, connection != nil {
-            let request = RTSPRequest(method: "TEARDOWN", url: baseURL)
+            let request = RTSPRequest(method: "TEARDOWN", url: aggregateURL)
             send(request.encoded(cseq: nextCSeq(), session: session))
         }
         self.session = nil
@@ -279,10 +302,17 @@ public actor RTSPClient {
 
         let play = try await perform(RTSPRequest(
             method: "PLAY",
-            url: baseURL,
+            url: aggregateURL,
             headers: ["Range": "npt=0.000-"]
         ))
         guard play.statusCode == 200 else {
+            sink?.log(.error, .app,
+                      "PLAY \(aggregateURL) was refused: \(play.statusCode) \(play.reason)",
+                      detail: """
+                      A 404 here usually means no stream is running: the SDP is
+                      static, so DESCRIBE answers either way. The start-live
+                      command is what creates it.
+                      """)
             throw RTSPError.status("PLAY", play.statusCode, play.reason)
         }
 

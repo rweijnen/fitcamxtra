@@ -6,7 +6,7 @@ struct RootView: View {
     var body: some View {
         @Bindable var state = state
 
-        ZStack(alignment: .bottom) {
+        ZStack {
             Palette.bg.ignoresSafeArea()
 
             Group {
@@ -18,10 +18,15 @@ struct RootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            if showsTabBar {
-                TabBar(selection: $state.tab, unreadCount: state.unreadCount)
-                    .transition(.move(edge: .bottom))
+            // An inset rather than an overlay: the bar's height depends on the
+            // text size, and every screen was guessing it with a fixed bottom
+            // padding. At larger text the bar grew past the guesses and covered
+            // the Live controls.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if showsTabBar {
+                    TabBar(selection: $state.tab, unreadCount: state.unreadCount)
+                        .transition(.move(edge: .bottom))
+                }
             }
         }
         .ignoresSafeArea(.keyboard)

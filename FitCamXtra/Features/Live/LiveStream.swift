@@ -29,7 +29,9 @@ final class LiveStream {
         self.renderer = VideoRenderer(sink: sink)
     }
 
-    func start(host: String) {
+    /// `camera` is used first: the stream has to be started over the CGI
+    /// before the RTSP server will serve it.
+    func start(host: String, camera: CameraClient?) {
         guard self.host != host || status == .stopped || isFailed else { return }
         stop()
 
@@ -37,7 +39,30 @@ final class LiveStream {
         status = .connecting
         renderer.reset()
 
-        let client = RTSPClient(host: host, sink: sink)
+        Task { [weak self] in
+            var streamURL: String?
+            if let camera {
+                do {
+                    streamURL = try await camera.startLiveStream()
+                } catch {
+                    // Worth saying, not worth stopping for: the RTSP side may
+                    // still serve a stream this firmware starts on its own.
+                    self?.sink.log(.warning, .app,
+                                   "The camera refused the start-live command: "
+                                   + error.localizedDescription)
+                }
+            }
+            await self?.openStream(host: host, url: streamURL)
+        }
+    }
+
+    private func openStream(host: String, url: String?) async {
+        guard self.host == host else { return }
+
+        // The address that answered wins over the one the camera names: in
+        // station mode it reports the address it thinks it has.
+        let client = url.map { RTSPClient(url: $0, fallbackHost: host, sink: sink) }
+            ?? RTSPClient(host: host, sink: sink)
         self.client = client
 
         Task {

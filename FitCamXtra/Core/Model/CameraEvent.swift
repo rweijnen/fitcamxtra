@@ -24,6 +24,9 @@ public struct CameraEvent: Sendable, Identifiable, Equatable {
     public let duration: TimeInterval?
     public let trigger: Trigger
     public let path: String
+    /// The path as the camera writes it, kept for the CGI commands that will
+    /// not take the file server's form.
+    public let cameraPath: String
     public let note: String?
     public var isLocked: Bool
 
@@ -33,10 +36,12 @@ public struct CameraEvent: Sendable, Identifiable, Equatable {
         duration: TimeInterval?,
         trigger: Trigger,
         path: String,
+        cameraPath: String? = nil,
         note: String? = nil,
         isLocked: Bool = true
     ) {
         self.id = id
+        self.cameraPath = cameraPath ?? path
         self.recordedAt = recordedAt
         self.duration = duration
         self.trigger = trigger
@@ -61,7 +66,14 @@ public struct MediaFile: Sendable, Identifiable, Equatable {
     }
 
     public let id: String
+    /// Where the file lives on the camera's HTTP server, such as
+    /// `/Novatek/MOVIE/x.MP4`.
     public let path: String
+    /// The path exactly as the camera wrote it, such as
+    /// `A:\Novatek\MOVIE\x.MP4`. The CGI commands that take a file want this
+    /// form, not the one the file server uses, and passing the wrong one is
+    /// silently accepted and answered with nothing useful.
+    public let cameraPath: String
     /// Nil when the listing carried no readable timestamp. Never filled in
     /// with the current time: that would scramble day grouping and the
     /// matching of neighbouring clips.
@@ -76,6 +88,7 @@ public struct MediaFile: Sendable, Identifiable, Equatable {
     public init(
         id: String,
         path: String,
+        cameraPath: String? = nil,
         recordedAt: Date?,
         byteCount: Int64,
         kind: Kind,
@@ -86,6 +99,7 @@ public struct MediaFile: Sendable, Identifiable, Equatable {
     ) {
         self.id = id
         self.path = path
+        self.cameraPath = cameraPath ?? path
         self.recordedAt = recordedAt
         self.byteCount = byteCount
         self.kind = kind

@@ -62,6 +62,7 @@ final class MediaLibrary {
                     duration: file.duration,
                     trigger: .unknown,
                     path: file.path,
+                    cameraPath: file.cameraPath,
                     isLocked: true
                 )
             }

@@ -259,7 +259,7 @@ struct SDCardView: View {
                 .strokeBorder(Palette.glassBorder, lineWidth: 1)
         )
         .padding(.horizontal, Metrics.gutter)
-        .padding(.bottom, 88)
+        .padding(.bottom, 12)
     }
 
     private func saveSelected() async {

@@ -30,7 +30,7 @@ struct LiveView: View {
         .background(Palette.bg)
         .task(id: state.connection.camera?.host) {
             if let host = state.connection.camera?.host {
-                state.liveStream.start(host: host)
+                state.liveStream.start(host: host, camera: state.cameraClient())
             } else {
                 state.liveStream.stop()
             }
@@ -247,7 +247,7 @@ struct LiveView: View {
                 .background(
                     Capsule().fill(Palette.accent.opacity(0.92))
                 )
-                .padding(.bottom, 150)
+                .padding(.bottom, 16)
         }
         .transition(.opacity)
     }

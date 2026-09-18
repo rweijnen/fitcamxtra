@@ -12,6 +12,7 @@ final class MediaDownloader {
     private let session: URLSession
     private var thumbnailCache: [String: UIImage] = [:]
     private var hasLoggedThumbnailFailure = false
+    private var thumbnailsUnavailable = false
 
     init(sink: LogSink) {
         self.sink = sink
@@ -42,6 +43,8 @@ final class MediaDownloader {
     /// Written out in blocks rather than byte by byte, and small enough that
     /// progress still moves on a slow link.
     private let chunkSize = 64 * 1024
+    /// Retries of a dropped download before giving up and saying so.
+    private let maxDownloadAttempts = 4
 
     private func url(for path: String) -> URL? {
         guard let host else { return nil }
@@ -54,6 +57,10 @@ final class MediaDownloader {
 
     func thumbnail(for file: MediaFile) async -> UIImage? {
         if let cached = thumbnailCache[file.path] { return cached }
+        // Failures are remembered too. Without this every redraw of a card of
+        // 83 clips asked again, which is a flood of requests at an embedded
+        // server that is also trying to serve a download.
+        if thumbnailsUnavailable { return nil }
 
         // Stills can be fetched whole; a clip cannot, so ask the camera for its
         // own thumbnail rather than pulling down a minute of 1440p.
@@ -61,7 +68,12 @@ final class MediaDownloader {
         if file.kind == .photo, let url = url(for: file.path) {
             request = URLRequest(url: url)
         } else if let host {
-            let escaped = file.path.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? file.path
+            // The camera's own path, backslashes and drive letter included.
+            // The file server's path is a different thing, and the CGI answers
+            // a request for it with something that is not an image.
+            let escaped = file.cameraPath
+                .addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-._~")))
+                ?? file.cameraPath
             request = URL(string: "http://\(host)/?custom=1&cmd=4001&str=\(escaped)").map { URLRequest(url: $0) }
         } else {
             request = nil
@@ -101,6 +113,7 @@ final class MediaDownloader {
     /// per tile, because a full card would otherwise flood the log with the
     /// same line.
     private func noteThumbnailFailure(_ file: MediaFile, _ reason: String, url: URL?, data: Data?) {
+        thumbnailsUnavailable = true
         guard !hasLoggedThumbnailFailure else { return }
         hasLoggedThumbnailFailure = true
 
@@ -204,23 +217,94 @@ final class MediaDownloader {
         sink.log(.info, .app, "Saved an incident of \(files.count) clips to Photos")
     }
 
-    /// Downloads to a temporary file while saying how far it has got.
+    /// Downloads to a temporary file while saying how far it has got, and
+    /// picks up where it left off when the camera drops the connection.
+    ///
+    /// A clip is tens of megabytes from an embedded server over its own wifi,
+    /// and "The network connection was lost" part-way through is a normal
+    /// event there rather than an exceptional one. Starting again from zero
+    /// would make a large clip unsaveable on a link that drops once a minute,
+    /// so each attempt asks for the bytes that are missing.
     private func downloadStreaming(
         from url: URL,
         expected: Int64,
         progress: (@MainActor (Double) -> Void)?
     ) async throws -> (URL, URLResponse) {
-        let (stream, response) = try await session.bytes(from: url)
-
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         FileManager.default.createFile(atPath: destination.path, contents: nil)
-        let handle = try FileHandle(forWritingTo: destination)
 
-        let total = response.expectedContentLength > 0 ? response.expectedContentLength : expected
+        var written: Int64 = 0
+        var lastResponse: URLResponse?
+        var attempt = 0
+
+        while true {
+            attempt += 1
+            do {
+                let (response, bytesWritten) = try await appendDownload(
+                    from: url,
+                    to: destination,
+                    startingAt: written,
+                    expected: expected,
+                    progress: progress
+                )
+                lastResponse = response
+                written = bytesWritten
+                break
+            } catch {
+                let resumable = written > 0 && attempt <= maxDownloadAttempts
+                guard resumable else {
+                    try? FileManager.default.removeItem(at: destination)
+                    throw error
+                }
+                sink.log(.warning, .http,
+                         "The download stopped after \(written) bytes: "
+                         + "\(error.localizedDescription). Asking for the rest.",
+                         detail: "attempt \(attempt) of \(maxDownloadAttempts)")
+            }
+        }
+
+        guard let lastResponse else { throw DownloadError.empty }
+        return (destination, lastResponse)
+    }
+
+    /// One attempt, appending to what is already on disk.
+    private func appendDownload(
+        from url: URL,
+        to destination: URL,
+        startingAt offset: Int64,
+        expected: Int64,
+        progress: (@MainActor (Double) -> Void)?
+    ) async throws -> (URLResponse, Int64) {
+        var request = URLRequest(url: url)
+        if offset > 0 {
+            request.setValue("bytes=\(offset)-", forHTTPHeaderField: "Range")
+        }
+
+        let (stream, response) = try await session.bytes(for: request)
+
+        // A server that ignores Range answers 200 and starts from the top, so
+        // what is already on disk has to go.
+        let honoursRange = (response as? HTTPURLResponse)?.statusCode == 206
+        var written = offset
+        if offset > 0 && !honoursRange {
+            sink.log(.info, .http, "The camera ignored the range request; starting again")
+            written = 0
+        }
+
+        let handle = try FileHandle(forWritingTo: destination)
+        do {
+            try handle.truncate(atOffset: UInt64(written))
+            try handle.seekToEnd()
+        } catch {
+            try? handle.close()
+            throw error
+        }
+
+        let reported = response.expectedContentLength > 0 ? response.expectedContentLength : 0
+        let total = reported > 0 ? reported + (honoursRange ? offset : 0) : expected
         var buffer = Data()
         buffer.reserveCapacity(chunkSize)
-        var written: Int64 = 0
         var lastReported = 0.0
 
         do {
@@ -242,15 +326,16 @@ final class MediaDownloader {
             }
             if !buffer.isEmpty {
                 try handle.write(contentsOf: buffer)
+                written += Int64(buffer.count)
             }
             try handle.close()
         } catch {
+            try? handle.write(contentsOf: buffer)
             try? handle.close()
-            try? FileManager.default.removeItem(at: destination)
             throw error
         }
 
-        return (destination, response)
+        return (response, written)
     }
 
     private func requestPhotosPermission() async -> Bool {
@@ -272,7 +357,7 @@ final class MediaDownloader {
     func delete(_ file: MediaFile, client: CameraClient?) async throws {
         if let client {
             do {
-                try await client.send(.deleteFile, str: file.path)
+                try await client.send(.deleteFile, str: file.cameraPath)
                 sink.log(.info, .app, "Deleted \(file.displayName)")
                 return
             } catch {

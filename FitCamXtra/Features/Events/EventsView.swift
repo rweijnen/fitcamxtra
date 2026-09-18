@@ -183,6 +183,7 @@ struct EventCard: View {
             thumbnail = await downloader.thumbnail(for: MediaFile(
                 id: event.id,
                 path: event.path,
+                cameraPath: event.cameraPath,
                 recordedAt: event.recordedAt,
                 byteCount: 0,
                 kind: .video,

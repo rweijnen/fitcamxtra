@@ -82,14 +82,30 @@ public actor CameraClient {
         CameraVersion(response: try await send(.version))
     }
 
-    /// 2015 starts the stream, 2019 returns its URL.
-    public func startLiveStream() async throws -> String {
+    /// 2015 starts the stream, 2019 reports its URL.
+    ///
+    /// Skipping this is what a LIVE555 `404 Stream Not Found` on PLAY looks
+    /// like: DESCRIBE answers from a static SDP whether or not a stream is
+    /// running, so the failure only shows up two requests later.
+    ///
+    /// Returns whatever the camera says its stream URL is, or nil when it
+    /// reports none — the caller then keeps the path it already had rather
+    /// than this inventing one.
+    public func startLiveStream() async throws -> String? {
         try await send(.startLive, par: 1)
+
         let response = try await send(.streamURL)
-        if let url = response.string("url") ?? response.string("string") {
-            return url
+        let reported = response.string("url")
+            ?? response.string("string")
+            ?? response.string("value")
+        guard let reported, reported.lowercased().hasPrefix("rtsp://") else {
+            sink?.log(.info, .app,
+                      "The camera reported no stream URL; keeping the known path",
+                      detail: String(response.raw.prefix(400)))
+            return nil
         }
-        return "rtsp://\(host)/xxx.mov"
+        sink?.log(.info, .app, "The camera reports its stream at \(reported)")
+        return reported
     }
 
     public func setNetworkMode(_ mode: NetworkMode) async throws {
@@ -112,7 +128,13 @@ public struct CameraVersion: Sendable, Equatable {
     public let raw: String
 
     public init(response: CameraResponse) {
-        model = response.string("model") ?? response.string("product") ?? response.string("brand")
+        // Confirmed on hardware: this unit answers cmd=3012 with
+        // <String>CAR-WA7053-230114</String> and no model element at all, so
+        // the app called a camera it was talking to "No camera yet".
+        model = response.string("model")
+            ?? response.string("product")
+            ?? response.string("brand")
+            ?? response.string("string")
         firmware = response.string("firmware") ?? response.string("version") ?? response.string("fw")
         raw = response.raw
     }
