@@ -2,6 +2,18 @@ import Foundation
 import Photos
 import UIKit
 
+/// How much of a download is on disk. Shared between the transfer queue, which
+/// writes it, and the retry loop, which reads it after a failure.
+final class ByteCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Int64 = 0
+
+    var value: Int64 {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
+}
+
 /// Downloads clips and stills from the camera's own HTTP file server and puts
 /// them in the photo library. Apple-specific: the Android port replaces this
 /// whole file and keeps everything above it.
@@ -53,9 +65,6 @@ final class MediaDownloader {
         }
     }
 
-    /// Written out in blocks rather than byte by byte, and small enough that
-    /// progress still moves on a slow link.
-    private let chunkSize = 64 * 1024
     /// Retries of a dropped download before giving up and saying so.
     private let maxDownloadAttempts = 4
 
@@ -272,10 +281,10 @@ final class MediaDownloader {
         FileManager.default.createFile(atPath: destination.path, contents: nil)
 
         // Bytes on disk, updated as they land rather than on return: an
-            // attempt that throws still wrote what it wrote, and the retry has
-            // to know how much that was. Reading it only from the return value
-            // meant a dropped download resumed from zero, which made the whole
-            // retry path dead code.
+        // attempt that throws still wrote what it wrote, and the retry has to
+        // know how much that was. Reading it only from the return value meant
+        // a dropped download resumed from zero, which made the retry path
+        // dead code.
         let counter = ByteCounter()
         var written: Int64 = 0
         var lastResponse: URLResponse?
@@ -313,13 +322,11 @@ final class MediaDownloader {
         return (destination, lastResponse)
     }
 
-    /// How much of the file is on disk. A reference so a failed attempt can
-    /// still report what it managed to write.
-    private final class ByteCounter {
-        var value: Int64 = 0
-    }
-
     /// One attempt, appending to what is already on disk.
+    ///
+    /// The transfer itself runs on `FileTransfer`'s own queue: this type is
+    /// main-actor bound, and a clip is large enough that neither the byte
+    /// loop nor the file writes belong on the thread the UI runs on.
     private func appendDownload(
         from url: URL,
         to destination: URL,
@@ -328,71 +335,29 @@ final class MediaDownloader {
         progress: (@MainActor (Double) -> Void)?,
         landed: ByteCounter
     ) async throws -> (URLResponse, Int64) {
-        var request = URLRequest(url: url)
-        if offset > 0 {
-            request.setValue("bytes=\(offset)-", forHTTPHeaderField: "Range")
-        }
+        let transfer = FileTransfer()
 
-        let (stream, response) = try await session.bytes(for: request)
-
-        // A server that ignores Range answers 200 and starts from the top, so
-        // what is already on disk has to go.
-        let honoursRange = (response as? HTTPURLResponse)?.statusCode == 206
-        var written = offset
-        if offset > 0 && !honoursRange {
-            sink.log(.info, .http, "The camera ignored the range request; starting again")
-            written = 0
-        }
-        landed.value = written
-
-        let handle = try FileHandle(forWritingTo: destination)
-        do {
-            try handle.truncate(atOffset: UInt64(written))
-            try handle.seekToEnd()
-        } catch {
-            try? handle.close()
-            throw error
-        }
-
-        let reported = response.expectedContentLength > 0 ? response.expectedContentLength : 0
-        let total = reported > 0 ? reported + (honoursRange ? offset : 0) : expected
-        var buffer = Data()
-        buffer.reserveCapacity(chunkSize)
-        var lastReported = 0.0
-
-        do {
-            for try await byte in stream {
-                buffer.append(byte)
-                guard buffer.count >= chunkSize else { continue }
-
-                try handle.write(contentsOf: buffer)
-                written += Int64(buffer.count)
-                landed.value = written
-                buffer.removeAll(keepingCapacity: true)
-
-                guard total > 0 else { continue }
-                let fraction = min(Double(written) / Double(total), 1)
-                // Only on visible movement: this drives a view.
-                if fraction - lastReported >= 0.01 {
-                    lastReported = fraction
-                    progress?(fraction)
+        let result = try await transfer.run(
+            url: url,
+            destination: destination,
+            offset: offset,
+            expected: expected,
+            // Set straight from the transfer queue rather than hopped to the
+            // main actor: a hop that has not run yet when the connection
+            // drops would tell the retry that nothing was written.
+            landed: { bytes in landed.value = bytes },
+            progress: progress.map { report in
+                { fraction in
+                    Task { @MainActor in report(fraction) }
                 }
             }
-            if !buffer.isEmpty {
-                try handle.write(contentsOf: buffer)
-                written += Int64(buffer.count)
-                landed.value = written
-            }
-            try handle.close()
-        } catch {
-            // The tail buffer is dropped rather than flushed: the counter is
-            // what the next attempt truncates to, and a write that is not
-            // counted would be overwritten anyway.
-            try? handle.close()
-            throw error
-        }
+        )
 
-        return (response, written)
+        if offset > 0 && !result.resumed {
+            sink.log(.info, .http, "The camera ignored the range request; starting again")
+        }
+        landed.value = result.bytesOnDisk
+        return (result.response, result.bytesOnDisk)
     }
 
     private func requestPhotosPermission() async -> Bool {
