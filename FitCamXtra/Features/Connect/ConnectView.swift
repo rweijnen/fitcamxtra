@@ -19,18 +19,18 @@ struct ConnectView: View {
                     header
 
                     Text("Find your camera")
-                        .font(Typo.sans(30, .semibold))
+                        .font(Typo.sans(.screenTitle, .semibold))
                         .tracking(-0.9)
                         .foregroundStyle(Palette.ink)
 
                     Text("Looking on the wifi your phone is joined to, whether that is your home network or the camera's own.")
-                        .font(Typo.sans(14))
+                        .font(Typo.sans(.body))
                         .foregroundStyle(Palette.inkSecondary)
                         .fixedSize(horizontal: false, vertical: true)
 
                     if let status = state.discoveryStatus {
                         Text(status)
-                            .font(Typo.mono(11))
+                            .font(Typo.mono(.detail))
                             .foregroundStyle(Palette.inkQuaternary)
                     }
 
@@ -46,7 +46,7 @@ struct ConnectView: View {
                     manualEntry
 
                     Text("The first connection asks for local network permission. Refusing it means the app can never find the camera.")
-                        .font(Typo.mono(10.5))
+                        .font(Typo.mono(.micro))
                         .foregroundStyle(Palette.inkQuaternary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 2)
@@ -67,7 +67,7 @@ struct ConnectView: View {
             Eyebrow(text: "Discovery", tracking: 1.4)
             Spacer()
             Button("Close") { dismiss() }
-                .font(Typo.sans(13.5, .semibold))
+                .font(Typo.sans(.body, .semibold))
                 .foregroundStyle(Palette.accent)
         }
         .padding(.top, 20)
@@ -84,10 +84,10 @@ struct ConnectView: View {
                 Circle().fill(Palette.accent).frame(width: 10, height: 10)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(state.cameraName ?? camera.host)
-                        .font(Typo.sans(15, .semibold))
+                        .font(Typo.sans(.cardTitle, .semibold))
                         .foregroundStyle(Palette.ink)
                     Text("\(state.networkMode.label) - \(camera.host)")
-                        .font(Typo.mono(11))
+                        .font(Typo.mono(.detail))
                         .foregroundStyle(Palette.inkQuaternary)
                 }
                 Spacer()
@@ -109,11 +109,11 @@ struct ConnectView: View {
             Eyebrow(text: "Wider network", color: Palette.accentText)
 
             Text("Your network is bigger than the part just searched")
-                .font(Typo.sans(15, .semibold))
+                .font(Typo.sans(.cardTitle, .semibold))
                 .foregroundStyle(Palette.ink)
 
             Text("The phone is on \(offer.network), which is \(offer.addressCount) addresses. Only the 254 around the phone were searched. Searching all of it takes roughly \(durationLabel(offer.estimatedSeconds)).")
-                .font(Typo.sans(13))
+                .font(Typo.sans(.label))
                 .foregroundStyle(Palette.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -121,7 +121,7 @@ struct ConnectView: View {
                 state.scanWiderNetwork()
             } label: {
                 Text("Search the whole network")
-                    .font(Typo.sans(14, .semibold))
+                    .font(Typo.sans(.body, .semibold))
                     .foregroundStyle(Palette.accentInk)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
@@ -133,7 +133,7 @@ struct ConnectView: View {
             .buttonStyle(.plain)
 
             Text("If you already know the camera's address, entering it below is instant.")
-                .font(Typo.mono(10.5))
+                .font(Typo.mono(.micro))
                 .foregroundStyle(Palette.inkQuaternary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -156,12 +156,12 @@ struct ConnectView: View {
                 Eyebrow(text: "Remembered")
 
                 Text(state.cameraName ?? "A camera you have connected to")
-                    .font(Typo.sans(15, .semibold))
+                    .font(Typo.sans(.cardTitle, .semibold))
                     .foregroundStyle(Palette.ink)
 
                 Text(state.remembered.lastHost.map { "Last answered at \($0). Not on this network now." }
                      ?? "No address kept; the app searches for it.")
-                    .font(Typo.mono(11))
+                    .font(Typo.mono(.detail))
                     .foregroundStyle(Palette.inkQuaternary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -178,7 +178,7 @@ struct ConnectView: View {
             } label: {
                 HStack {
                     Text("Enter an address manually")
-                        .font(Typo.sans(14))
+                        .font(Typo.sans(.body))
                         .foregroundStyle(Palette.inkSecondary)
                     Spacer()
                     Image(systemName: manualExpanded ? "chevron.down" : "chevron.right")
@@ -199,7 +199,7 @@ struct ConnectView: View {
                     Eyebrow(text: "IP address")
 
                     TextField("192.168.2.41", text: $manualAddress)
-                        .font(Typo.mono(16))
+                        .font(Typo.mono(.cardTitle))
                         .foregroundStyle(Palette.ink)
                         .keyboardType(.numbersAndPunctuation)
                         .textInputAutocapitalization(.never)
@@ -213,7 +213,7 @@ struct ConnectView: View {
 
                     if manualFailed {
                         Text("Nothing answered at that address.")
-                            .font(Typo.mono(10.5))
+                            .font(Typo.mono(.micro))
                             .foregroundStyle(Palette.destructiveText)
                     }
 
@@ -221,7 +221,7 @@ struct ConnectView: View {
                         Task { await testAndSave() }
                     } label: {
                         Text(isTesting ? "Testing..." : "Test and save")
-                            .font(Typo.sans(15, .semibold))
+                            .font(Typo.sans(.cardTitle, .semibold))
                             .foregroundStyle(Palette.accentInk)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
@@ -234,7 +234,7 @@ struct ConnectView: View {
                     .disabled(isTesting || IPv4Address(manualAddress) == nil)
 
                     Text("Give the camera a reserved lease in your router so this address stays valid. The app remembers it and tries it first on every launch.")
-                        .font(Typo.mono(10.5))
+                        .font(Typo.mono(.micro))
                         .foregroundStyle(Palette.inkQuaternary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -246,7 +246,7 @@ struct ConnectView: View {
         VStack(alignment: .leading, spacing: 10) {
             if !state.remembered.autoConnectEnabled {
                 Text("Forgotten. The app will not look for this camera until you scan again.")
-                    .font(Typo.mono(10.5))
+                    .font(Typo.mono(.micro))
                     .foregroundStyle(Palette.accentText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -255,7 +255,7 @@ struct ConnectView: View {
                 Button(state.isSearching ? "Searching..." : "Scan again") {
                     state.rescan()
                 }
-                .font(Typo.sans(13.5, .semibold))
+                .font(Typo.sans(.body, .semibold))
                 .foregroundStyle(Palette.accent)
                 .disabled(state.isSearching)
 
@@ -265,7 +265,7 @@ struct ConnectView: View {
                     Button(state.cameraName.map { "Forget \($0)" } ?? "Forget this camera") {
                         showForgetConfirm = true
                     }
-                    .font(Typo.sans(13.5, .semibold))
+                    .font(Typo.sans(.body, .semibold))
                     .foregroundStyle(Palette.destructiveText)
                 }
             }

@@ -22,23 +22,23 @@ struct SettingRow: View {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(setting.label)
-                        .font(Typo.sans(14.5, .medium))
+                        .font(Typo.sans(.cardTitle, .medium))
                         .foregroundStyle(isDestructive ? Palette.destructiveText : Palette.ink)
 
                     if let hint = setting.hint {
                         Text(hint)
-                            .font(Typo.sans(11.5))
+                            .font(Typo.sans(.detail))
                             .foregroundStyle(Palette.inkQuaternary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
                     if case .unavailable(let reason) = value {
                         Text(reason)
-                            .font(Typo.mono(10.5))
+                            .font(Typo.mono(.micro))
                             .foregroundStyle(Palette.accentText)
                     } else if case .unknown = value, !isPending {
                         Text("not read yet")
-                            .font(Typo.mono(10.5))
+                            .font(Typo.mono(.micro))
                             .foregroundStyle(Palette.inkFaint)
                     }
                 }
@@ -104,8 +104,8 @@ struct SettingRow: View {
                 } label: {
                     HStack(spacing: 5) {
                         Text(currentLabel(options))
-                            .lineLimit(1)
-                            .font(Typo.sans(13.5))
+                            .font(Typo.sans(.body))
+                            .multilineTextAlignment(.trailing)
                             .foregroundStyle(Palette.inkQuaternary)
                         Image(systemName: "chevron.right")
                             .font(.system(size: 11, weight: .semibold))
@@ -118,17 +118,17 @@ struct SettingRow: View {
             case .slider(_, _, let unit, let scale):
                 if let current = value.intValue {
                     Text(format(Double(current) * scale) + " " + unit)
-                        .font(Typo.mono(12.5, .semibold))
+                        .font(Typo.mono(.label, .semibold))
                         .foregroundStyle(Palette.accent)
                 } else {
                     Text("--")
-                        .font(Typo.mono(12.5))
+                        .font(Typo.mono(.label))
                         .foregroundStyle(Palette.inkFaint)
                 }
 
             case .readOnly:
                 Text(value.intValue.map(String.init) ?? "--")
-                    .font(Typo.sans(13.5))
+                    .font(Typo.sans(.body))
                     .foregroundStyle(Palette.inkQuaternary)
 
             case .destructiveAction:

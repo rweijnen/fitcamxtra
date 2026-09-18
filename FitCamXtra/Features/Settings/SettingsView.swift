@@ -10,7 +10,7 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Settings")
-                    .font(Typo.sans(30, .semibold))
+                    .font(Typo.sans(.screenTitle, .semibold))
                     .tracking(-0.9)
                     .foregroundStyle(Palette.ink)
                     .padding(.top, Metrics.headerTop)
@@ -32,7 +32,7 @@ struct SettingsView: View {
 
                 if let error = state.settings.lastError {
                     Text(error)
-                        .font(Typo.mono(11))
+                        .font(Typo.mono(.detail))
                         .foregroundStyle(Palette.destructiveText)
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -71,10 +71,10 @@ struct SettingsView: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(state.cameraName ?? "No camera yet")
-                        .font(Typo.sans(15, .semibold))
+                        .font(Typo.sans(.cardTitle, .semibold))
                         .foregroundStyle(state.cameraName == nil ? Palette.inkQuaternary : Palette.ink)
                     Text(metaLine)
-                        .font(Typo.mono(11))
+                        .font(Typo.mono(.detail))
                         .foregroundStyle(Palette.inkQuaternary)
                 }
 
@@ -99,7 +99,7 @@ struct SettingsView: View {
 
     private var notConnectedNote: some View {
         Text("Camera settings appear once the app is connected. The rows below cannot be read or changed from here.")
-            .font(Typo.sans(13))
+            .font(Typo.sans(.label))
             .foregroundStyle(Palette.inkSecondary)
             .fixedSize(horizontal: false, vertical: true)
             .padding(14)
@@ -152,7 +152,7 @@ struct SettingsView: View {
                     Eyebrow(text: group.rawValue)
                     if let note = group.note {
                         Text(note)
-                            .font(Typo.sans(11.5))
+                            .font(Typo.sans(.detail))
                             .foregroundStyle(Palette.inkQuaternary)
                     }
                     VStack(spacing: 0) {
@@ -198,10 +198,10 @@ struct SettingsView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Forget this camera")
-                        .font(Typo.sans(14.5, .medium))
+                        .font(Typo.sans(.cardTitle, .medium))
                         .foregroundStyle(Palette.destructiveText)
                     Text("Clears the remembered address and stops reconnecting. The camera itself is not changed.")
-                        .font(Typo.sans(11.5))
+                        .font(Typo.sans(.detail))
                         .foregroundStyle(Palette.inkQuaternary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -260,11 +260,11 @@ struct SettingsView: View {
         } label: {
             HStack {
                 Text(label)
-                    .font(Typo.sans(14.5, .medium))
+                    .font(Typo.sans(.cardTitle, .medium))
                     .foregroundStyle(Palette.ink)
                 Spacer()
                 Text(value)
-                    .font(Typo.sans(13.5))
+                    .font(Typo.sans(.body))
                     .foregroundStyle(Palette.inkQuaternary)
                 if action != nil {
                     Image(systemName: "chevron.right")

@@ -37,7 +37,7 @@ struct NetworkView: View {
 
                     if let failure {
                         Text(failure)
-                            .font(Typo.mono(11))
+                            .font(Typo.mono(.detail))
                             .foregroundStyle(Palette.destructiveText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -62,7 +62,7 @@ struct NetworkView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 12, weight: .semibold))
-                    Text("Settings").font(Typo.sans(14))
+                    Text("Settings").font(Typo.sans(.body))
                 }
                 .foregroundStyle(Palette.accent)
             }
@@ -99,11 +99,11 @@ struct NetworkView: View {
     private func statusRow(_ label: String, _ value: String, mono: Bool = false) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label)
-                .font(Typo.sans(13.5))
+                .font(Typo.sans(.body))
                 .foregroundStyle(Palette.inkQuaternary)
             Spacer(minLength: 16)
             Text(value)
-                .font(mono ? Typo.mono(12.5) : Typo.sans(13.5))
+                .font(mono ? Typo.mono(.label) : Typo.sans(.body))
                 .foregroundStyle(Palette.ink)
                 .multilineTextAlignment(.trailing)
         }
@@ -116,10 +116,10 @@ struct NetworkView: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Wi-Fi mode")
-                        .font(Typo.sans(14.5, .medium))
+                        .font(Typo.sans(.cardTitle, .medium))
                         .foregroundStyle(Palette.ink)
                     Text(modeHint)
-                        .font(Typo.sans(11.5))
+                        .font(Typo.sans(.detail))
                         .foregroundStyle(Palette.inkQuaternary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -152,11 +152,11 @@ struct NetworkView: View {
 
             HStack {
                 Text("AP")
-                    .font(Typo.mono(11, .medium))
+                    .font(Typo.mono(.detail, .medium))
                     .foregroundStyle(mode == .accessPoint ? Palette.accent : Palette.inkQuaternary)
                 Spacer()
                 Text("STATION")
-                    .font(Typo.mono(11, .medium))
+                    .font(Typo.mono(.detail, .medium))
                     .foregroundStyle(mode == .station ? Palette.accent : Palette.inkQuaternary)
             }
         }
@@ -176,17 +176,17 @@ struct NetworkView: View {
                 Eyebrow(text: "Modified firmware required", color: Palette.destructiveText, tracking: 0.9)
                 Spacer()
                 Button("Close") { showFirmwareNote = false }
-                    .font(Typo.sans(12, .semibold))
+                    .font(Typo.sans(.label, .semibold))
                     .foregroundStyle(Palette.destructiveText)
             }
 
             Text("Stock firmware forgets station mode on every power cycle and comes back up as its own access point. This app does not re-apply it for you, because it does not keep your wifi passphrase. Until the firmware is patched, joining your network again means coming back to this screen after each power cycle.")
-                .font(Typo.sans(12.5))
+                .font(Typo.sans(.label))
                 .foregroundStyle(Palette.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text("Patching is at your own risk and may void warranty.")
-                .font(Typo.sans(12.5, .semibold))
+                .font(Typo.sans(.label, .semibold))
                 .foregroundStyle(Palette.destructiveText)
         }
         .padding(15)
@@ -208,7 +208,7 @@ struct NetworkView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Eyebrow(text: "Home SSID")
                 TextField("Your wifi name", text: $homeSSID)
-                    .font(Typo.mono(15))
+                    .font(Typo.mono(.cardTitle))
                     .foregroundStyle(Palette.ink)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -223,7 +223,7 @@ struct NetworkView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Eyebrow(text: "Passphrase")
                 SecureField("Your wifi password", text: $passphrase)
-                    .font(Typo.mono(15))
+                    .font(Typo.mono(.cardTitle))
                     .foregroundStyle(Palette.ink)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -236,7 +236,7 @@ struct NetworkView: View {
             }
 
             Text("The passphrase is sent straight to the camera and is not stored on the phone. After applying, the camera restarts its wifi and drops off this network, so rejoin your home wifi and the app will find it again.")
-                .font(Typo.mono(10.5))
+                .font(Typo.mono(.micro))
                 .foregroundStyle(Palette.inkQuaternary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -247,10 +247,10 @@ struct NetworkView: View {
     private var apNote: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Phone joins the camera directly")
-                .font(Typo.sans(14, .medium))
+                .font(Typo.sans(.body, .medium))
                 .foregroundStyle(Palette.ink)
             Text("Reliable anywhere, but your phone loses internet while connected, and wireless CarPlay drops.")
-                .font(Typo.sans(12.5))
+                .font(Typo.sans(.label))
                 .foregroundStyle(Palette.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -268,7 +268,7 @@ struct NetworkView: View {
             Task { await apply() }
         } label: {
             Text(applied ? "Applied, rediscovering" : (isApplying ? "Applying..." : "Apply and rejoin"))
-                .font(Typo.sans(15, .semibold))
+                .font(Typo.sans(.cardTitle, .semibold))
                 .foregroundStyle(Palette.accentInk)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 13)
@@ -297,7 +297,7 @@ struct NetworkView: View {
             } label: {
                 HStack {
                     Text("Advanced")
-                        .font(Typo.sans(13.5))
+                        .font(Typo.sans(.body))
                         .foregroundStyle(Palette.inkSecondary)
                     Spacer()
                     Image(systemName: showAdvanced ? "chevron.down" : "chevron.right")
@@ -318,7 +318,7 @@ struct NetworkView: View {
                               mono: true)
                     statusRow("Reserved IP", "recommended", mono: true)
                     Text("Give the camera a fixed lease in your router. The app tries the remembered address first on every launch, so a stable address makes reconnecting instant.")
-                        .font(Typo.mono(10.5))
+                        .font(Typo.mono(.micro))
                         .foregroundStyle(Palette.inkQuaternary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

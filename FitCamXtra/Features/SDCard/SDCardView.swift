@@ -42,7 +42,7 @@ struct SDCardView: View {
 
                     if let failure {
                         Text(failure)
-                            .font(Typo.mono(11))
+                            .font(Typo.mono(.detail))
                             .foregroundStyle(Palette.destructiveText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -72,7 +72,7 @@ struct SDCardView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             Text("SD card")
-                .font(Typo.sans(30, .semibold))
+                .font(Typo.sans(.screenTitle, .semibold))
                 .tracking(-0.9)
                 .foregroundStyle(Palette.ink)
 
@@ -83,7 +83,7 @@ struct SDCardView: View {
                     selecting.toggle()
                     selected.removeAll()
                 }
-                .font(Typo.sans(13.5, .semibold))
+                .font(Typo.sans(.body, .semibold))
                 .foregroundStyle(Palette.accent)
             }
         }
@@ -100,11 +100,11 @@ struct SDCardView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("\(library.files.filter { $0.kind == .video }.count) CLIPS - \(library.files.filter { $0.kind == .photo }.count) PHOTOS")
-                            .font(Typo.mono(11))
+                            .font(Typo.mono(.detail))
                             .foregroundStyle(Palette.inkQuaternary)
                         Spacer()
                         Text(byteLabel(total))
-                            .font(Typo.mono(11))
+                            .font(Typo.mono(.detail))
                             .foregroundStyle(Palette.inkQuaternary)
                     }
 
@@ -136,7 +136,7 @@ struct SDCardView: View {
 
     private func legend(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(Typo.mono(10.5))
+            .font(Typo.mono(.micro))
             .foregroundStyle(color)
     }
 
@@ -148,7 +148,7 @@ struct SDCardView: View {
                     filter = option
                 } label: {
                     Text(option.rawValue)
-                        .font(Typo.sans(13))
+                        .font(Typo.sans(.label))
                         .foregroundStyle(active ? Palette.accentInk : Palette.inkSecondary)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 7)
@@ -171,7 +171,7 @@ struct SDCardView: View {
         HStack(spacing: 10) {
             ProgressView().tint(Palette.accent)
             Text("Reading the card")
-                .font(Typo.mono(11.5))
+                .font(Typo.mono(.detail))
                 .foregroundStyle(Palette.inkQuaternary)
         }
         .frame(maxWidth: .infinity)
@@ -184,11 +184,11 @@ struct SDCardView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 Text(dayLabel(day))
-                    .font(Typo.sans(13, .semibold))
+                    .font(Typo.sans(.label, .semibold))
                     .foregroundStyle(Palette.ink)
                 Spacer()
                 Text("\(files.count) item\(files.count == 1 ? "" : "s") - \(byteLabel(files.reduce(0) { $0 + $1.byteCount }))")
-                    .font(Typo.mono(11))
+                    .font(Typo.mono(.detail))
                     .foregroundStyle(Palette.inkQuaternary)
             }
 
@@ -224,7 +224,7 @@ struct SDCardView: View {
                 Task { await saveSelected() }
             } label: {
                 Text(busy ?? "Save \(selected.count) to Photos")
-                    .font(Typo.sans(14, .semibold))
+                    .font(Typo.sans(.body, .semibold))
                     .foregroundStyle(Palette.accentInk)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
@@ -240,7 +240,7 @@ struct SDCardView: View {
                 Task { await deleteSelected() }
             } label: {
                 Text("Delete")
-                    .font(Typo.sans(14, .semibold))
+                    .font(Typo.sans(.body, .semibold))
                     .foregroundStyle(Palette.destructiveText)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 12)
@@ -352,7 +352,7 @@ struct FileTile: View {
                     Spacer()
                     if file.kind == .photo {
                         Text("JPG")
-                            .font(Typo.mono(9))
+                            .font(Typo.mono(.micro))
                             .foregroundStyle(Palette.ink)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 2)
@@ -371,7 +371,9 @@ struct FileTile: View {
                 Spacer()
                 HStack {
                     Text(file.timeLabel)
-                        .font(Typo.mono(9.5, .semibold))
+                        .font(Typo.mono(.micro, .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 2)

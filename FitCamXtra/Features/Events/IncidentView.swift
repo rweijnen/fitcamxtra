@@ -68,10 +68,10 @@ struct IncidentView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.title)
-                    .font(Typo.sans(15, .semibold))
+                    .font(Typo.sans(.cardTitle, .semibold))
                     .foregroundStyle(Palette.ink)
                 Text("incident bundle - \(bundle.segments.count) segment\(bundle.segments.count == 1 ? "" : "s")")
-                    .font(Typo.mono(11.5))
+                    .font(Typo.mono(.detail))
                     .foregroundStyle(Palette.inkQuaternary)
             }
 
@@ -132,10 +132,10 @@ struct IncidentView: View {
                         }
                         VStack(spacing: 2) {
                             Text(segment.startedAt?.formatted(date: .omitted, time: .shortened) ?? "--:--")
-                                .font(Typo.mono(10.5))
+                                .font(Typo.mono(.micro))
                                 .foregroundStyle(segment.role == .locked ? Palette.accent : Palette.inkSecondary)
                             Text(segment.role.label)
-                                .font(Typo.mono(9.5))
+                                .font(Typo.mono(.micro))
                                 .foregroundStyle(Palette.inkQuaternary)
                         }
                         .padding(.vertical, 6)
@@ -156,7 +156,7 @@ struct IncidentView: View {
                 Text(event.recordedAt == nil
                      ? "The camera reported no timestamp for this clip, so neighbouring clips cannot be identified. Browse the card to find them by hand."
                      : "No neighbouring clips were found on the card. They may already have been overwritten by the loop.")
-                    .font(Typo.mono(10.5))
+                    .font(Typo.mono(.micro))
                     .foregroundStyle(Palette.accentText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -171,7 +171,7 @@ struct IncidentView: View {
                     range = option
                 } label: {
                     Text(option.label)
-                        .font(Typo.sans(13))
+                        .font(Typo.sans(.label))
                         .foregroundStyle(active ? Palette.accent : Palette.inkSecondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 9)
@@ -191,7 +191,7 @@ struct IncidentView: View {
 
     private var explainer: some View {
         Text("Loop recording writes roughly one-minute chunks, so the start or aftermath of the moment you locked often sits in a neighbour.")
-            .font(Typo.sans(12))
+            .font(Typo.sans(.label))
             .foregroundStyle(Palette.inkQuaternary)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -214,7 +214,7 @@ struct IncidentView: View {
                     Text("Try saving again")
                 }
             }
-            .font(Typo.sans(15, .semibold))
+            .font(Typo.sans(.cardTitle, .semibold))
             .foregroundStyle(Palette.accentInk)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 13)
@@ -237,13 +237,13 @@ struct IncidentView: View {
         VStack(alignment: .leading, spacing: 10) {
             if case .failed(let reason) = saveState {
                 Text(reason)
-                    .font(Typo.mono(11))
+                    .font(Typo.mono(.detail))
                     .foregroundStyle(Palette.destructiveText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Text("Saving copies the clips to your phone's album over wifi. The originals stay on the card until the loop overwrites them.")
-                .font(Typo.mono(10.5))
+                .font(Typo.mono(.micro))
                 .foregroundStyle(Palette.inkQuaternary)
                 .fixedSize(horizontal: false, vertical: true)
         }

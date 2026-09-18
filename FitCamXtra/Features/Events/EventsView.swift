@@ -11,12 +11,12 @@ struct EventsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Events")
-                        .font(Typo.sans(30, .semibold))
+                        .font(Typo.sans(.screenTitle, .semibold))
                         .tracking(-0.9)
                         .foregroundStyle(Palette.ink)
 
                     Text(subtitle)
-                        .font(Typo.sans(13))
+                        .font(Typo.sans(.label))
                         .foregroundStyle(Palette.inkTertiary)
                 }
                 .padding(.top, Metrics.headerTop)
@@ -26,7 +26,7 @@ struct EventsView: View {
                 } label: {
                     HStack {
                         Text("Wasn't it locked? Browse the whole card")
-                            .font(Typo.sans(14))
+                            .font(Typo.sans(.body))
                             .foregroundStyle(Palette.inkSecondary)
                         Spacer()
                         Image(systemName: "chevron.right")
@@ -69,7 +69,7 @@ struct EventsView: View {
                 }
 
                 Text("Older events are on the card until overwritten")
-                    .font(Typo.mono(11.5))
+                    .font(Typo.mono(.detail))
                     .foregroundStyle(Palette.inkFaint)
                     .frame(maxWidth: .infinity)
                     .padding(.top, 4)
@@ -91,7 +91,7 @@ struct EventsView: View {
         HStack(spacing: 10) {
             ProgressView().tint(Palette.accent)
             Text("Reading the card")
-                .font(Typo.mono(11.5))
+                .font(Typo.mono(.detail))
                 .foregroundStyle(Palette.inkQuaternary)
         }
         .frame(maxWidth: .infinity)
@@ -137,7 +137,7 @@ struct EventCard: View {
                         Image(systemName: "lock.fill")
                             .font(.system(size: 9, weight: .semibold))
                         Text("LOCKED")
-                            .font(Typo.mono(10))
+                            .font(Typo.mono(.micro))
                     }
                     .foregroundStyle(Palette.ink)
                     .padding(.horizontal, 8)
@@ -146,7 +146,7 @@ struct EventCard: View {
 
                     if isUnread {
                         Text("NEW")
-                            .font(Typo.mono(10, .bold))
+                            .font(Typo.mono(.micro, .bold))
                             .foregroundStyle(Palette.accentInk)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 4)
@@ -162,10 +162,10 @@ struct EventCard: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(event.title)
-                        .font(Typo.sans(15, .semibold))
+                        .font(Typo.sans(.cardTitle, .semibold))
                         .foregroundStyle(Palette.ink)
                     Text(event.timeLabel)
-                        .font(Typo.sans(12))
+                        .font(Typo.sans(.label))
                         .foregroundStyle(Palette.inkQuaternary)
                 }
                 Spacer()
@@ -202,10 +202,10 @@ struct EmptyStateCard: View {
         VStack(alignment: .leading, spacing: 8) {
             Eyebrow(text: eyebrow)
             Text(headline)
-                .font(Typo.sans(19, .semibold))
+                .font(Typo.sans(.sectionTitle, .semibold))
                 .foregroundStyle(Palette.ink)
             Text(detail)
-                .font(Typo.sans(13.5))
+                .font(Typo.sans(.body))
                 .foregroundStyle(Palette.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

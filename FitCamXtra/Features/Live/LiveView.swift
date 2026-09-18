@@ -71,11 +71,11 @@ struct LiveView: View {
         VStack(spacing: 6) {
             Eyebrow(text: "Live", color: Palette.inkFaint)
             Text(title)
-                .font(Typo.sans(15, .semibold))
+                .font(Typo.sans(.cardTitle, .semibold))
                 .foregroundStyle(Palette.ink)
             if let detail {
                 Text(detail)
-                    .font(Typo.mono(11))
+                    .font(Typo.mono(.detail))
                     .foregroundStyle(Palette.inkQuaternary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -101,7 +101,7 @@ struct LiveView: View {
             VStack(spacing: 8) {
                 controlBar
                 Text("live audio muted - tap image for full frame")
-                    .font(Typo.mono(10.5))
+                    .font(Typo.mono(.micro))
                     .foregroundStyle(Palette.onVideoCaption)
             }
             .padding(.horizontal, 18)
@@ -117,7 +117,9 @@ struct LiveView: View {
                     .frame(width: 7, height: 7)
             }
             Text(state.isRecording ? "REC \(state.elapsedLabel)" : "STANDBY")
-                .font(Typo.mono(11.5, .semibold))
+                .font(Typo.mono(.detail, .semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
                 .tracking(0.46)
                 .foregroundStyle(state.isRecording ? .white : Color.white.opacity(0.72))
         }
@@ -159,7 +161,7 @@ struct LiveView: View {
 
     private func chip(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(Typo.mono(10.5, .semibold))
+            .font(Typo.mono(.micro, .semibold))
             .foregroundStyle(color)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
@@ -238,7 +240,7 @@ struct LiveView: View {
         VStack {
             Spacer()
             Text(state.snapshotMessage)
-                .font(Typo.sans(13.5, .semibold))
+                .font(Typo.sans(.body, .semibold))
                 .foregroundStyle(Palette.accentInk)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -258,19 +260,19 @@ struct LiveView: View {
                 Eyebrow(text: "No camera", color: Palette.destructiveText, tracking: 1.32)
 
                 Text(state.isSearching ? "Looking for the camera" : "Not connected to the camera")
-                    .font(Typo.sans(21, .semibold))
+                    .font(Typo.sans(.sectionTitle, .semibold))
                     .foregroundStyle(Palette.ink)
                     .multilineTextAlignment(.center)
 
                 Text(disconnectedExplanation)
-                    .font(Typo.sans(14))
+                    .font(Typo.sans(.body))
                     .foregroundStyle(Palette.inkSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let status = state.discoveryStatus {
                     Text(status)
-                        .font(Typo.mono(11))
+                        .font(Typo.mono(.detail))
                         .foregroundStyle(Palette.inkQuaternary)
                         .multilineTextAlignment(.center)
                         .padding(.top, 2)
@@ -280,7 +282,7 @@ struct LiveView: View {
                     state.isConnectSheetPresented = true
                 } label: {
                     Text("Connect")
-                        .font(Typo.sans(15, .semibold))
+                        .font(Typo.sans(.cardTitle, .semibold))
                         .foregroundStyle(Palette.accentInk)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)

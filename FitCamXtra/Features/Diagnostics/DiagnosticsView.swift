@@ -28,7 +28,7 @@ struct DiagnosticsView: View {
 
                 if let exportFailure {
                     Text(exportFailure)
-                        .font(Typo.mono(11))
+                        .font(Typo.mono(.detail))
                         .foregroundStyle(Palette.destructiveText)
                         .padding(.horizontal, Metrics.gutter)
                         .padding(.bottom, 8)
@@ -38,7 +38,7 @@ struct DiagnosticsView: View {
                     VStack(spacing: 8) {
                         Eyebrow(text: "Nothing logged")
                         Text("Nothing has been recorded at this level yet.")
-                            .font(Typo.sans(13.5))
+                            .font(Typo.sans(.body))
                             .foregroundStyle(Palette.inkSecondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -70,7 +70,7 @@ struct DiagnosticsView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 12, weight: .semibold))
-                    Text("Settings").font(Typo.sans(14))
+                    Text("Settings").font(Typo.sans(.body))
                 }
                 .foregroundStyle(Palette.accent)
             }
@@ -87,7 +87,7 @@ struct DiagnosticsView: View {
                 }
             } label: {
                 Text(copied ? "Copied" : "Copy")
-                    .font(Typo.sans(13.5, .semibold))
+                    .font(Typo.sans(.body, .semibold))
                     .foregroundStyle(Palette.accent)
             }
             .buttonStyle(.plain)
@@ -110,7 +110,7 @@ struct DiagnosticsView: View {
                 state.diagnostics.clear()
             } label: {
                 Text("Clear")
-                    .font(Typo.sans(13.5, .semibold))
+                    .font(Typo.sans(.body, .semibold))
                     .foregroundStyle(Palette.destructiveText)
             }
             .buttonStyle(.plain)
@@ -129,7 +129,7 @@ struct DiagnosticsView: View {
                     minimumLevel = level
                 } label: {
                     Text(level == .debug ? "ALL" : level.label)
-                        .font(Typo.mono(10.5, .semibold))
+                        .font(Typo.mono(.micro, .semibold))
                         .foregroundStyle(active ? Palette.accent : Palette.inkQuaternary)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 7)
@@ -149,7 +149,7 @@ struct DiagnosticsView: View {
 
             Toggle(isOn: $showDetail) {
                 Text("Detail")
-                    .font(Typo.mono(10.5, .semibold))
+                    .font(Typo.mono(.micro, .semibold))
                     .foregroundStyle(Palette.inkQuaternary)
             }
             .toggleStyle(.switch)
@@ -164,30 +164,30 @@ struct DiagnosticsView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(entry.at.formatted(.dateTime.hour().minute().second()))
-                    .font(Typo.mono(10))
+                    .font(Typo.mono(.micro))
                     .foregroundStyle(Palette.inkFaint)
 
                 Text(entry.category.rawValue)
-                    .font(Typo.mono(9.5, .semibold))
+                    .font(Typo.mono(.micro, .semibold))
                     .foregroundStyle(Palette.inkFaint)
 
                 Spacer(minLength: 0)
 
                 if entry.level > .info {
                     Text(entry.level.label)
-                        .font(Typo.mono(9.5, .bold))
+                        .font(Typo.mono(.micro, .bold))
                         .foregroundStyle(colour(for: entry.level))
                 }
             }
 
             Text(entry.message)
-                .font(Typo.mono(11.5))
+                .font(Typo.mono(.detail))
                 .foregroundStyle(colour(for: entry.level))
                 .fixedSize(horizontal: false, vertical: true)
 
             if showDetail, let detail = entry.detail, !detail.isEmpty {
                 Text(detail)
-                    .font(Typo.mono(10))
+                    .font(Typo.mono(.micro))
                     .foregroundStyle(Palette.inkFaint)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(8)

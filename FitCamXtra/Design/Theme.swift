@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // Design tokens from the FitCamXtra handoff. Warm-black "evidence" palette,
 // a single Dutch-orange action colour, red reserved for record and destructive.
@@ -53,18 +54,76 @@ enum Typo {
     /// pair keeps the sans/mono split the design depends on.
     static let useBundledPlex = false
 
-    static func sans(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        if useBundledPlex {
-            return .custom(plexSansName(for: weight), fixedSize: size)
+    /// Call sites name a role, not a point size, so the scale stays a design
+    /// decision made once here. Each role carries the design size and the text
+    /// style its growth curve follows under Dynamic Type.
+    enum Role {
+        case screenTitle
+        case sectionTitle
+        case cardTitle
+        case body
+        case label
+        case detail
+        /// Apple's legibility floor is 11pt, so nothing smaller exists — the
+        /// mono readouts that used to sit at 9pt land here.
+        case micro
+
+        var size: CGFloat {
+            switch self {
+            case .screenTitle: return 30
+            case .sectionTitle: return 20
+            case .cardTitle: return 15
+            case .body: return 14
+            case .label: return 13
+            case .detail: return 11.5
+            case .micro: return 11
+            }
         }
-        return .system(size: size, weight: weight, design: .default)
+
+        var uiTextStyle: UIFont.TextStyle {
+            switch self {
+            case .screenTitle: return .largeTitle
+            case .sectionTitle: return .title2
+            case .cardTitle: return .headline
+            case .body: return .body
+            case .label: return .subheadline
+            case .detail: return .footnote
+            case .micro: return .caption2
+            }
+        }
+
+        var textStyle: Font.TextStyle {
+            switch self {
+            case .screenTitle: return .largeTitle
+            case .sectionTitle: return .title2
+            case .cardTitle: return .headline
+            case .body: return .body
+            case .label: return .subheadline
+            case .detail: return .footnote
+            case .micro: return .caption2
+            }
+        }
     }
 
-    static func mono(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+    static func sans(_ role: Role, _ weight: Font.Weight = .regular) -> Font {
         if useBundledPlex {
-            return .custom(plexMonoName(for: weight), fixedSize: size)
+            return .custom(plexSansName(for: weight), size: role.size, relativeTo: role.textStyle)
         }
-        return .system(size: size, weight: weight, design: .monospaced)
+        return .system(size: scaled(role), weight: weight, design: .default)
+    }
+
+    static func mono(_ role: Role, _ weight: Font.Weight = .regular) -> Font {
+        if useBundledPlex {
+            return .custom(plexMonoName(for: weight), size: role.size, relativeTo: role.textStyle)
+        }
+        return .system(size: scaled(role), weight: weight, design: .monospaced)
+    }
+
+    /// SwiftUI has no `Font.system(size:relativeTo:)`, so the scaling has to come
+    /// from UIKit's metrics. This is why the Design layer imports UIKit; it is the
+    /// only Apple dependency here and Core stays clean of it.
+    private static func scaled(_ role: Role) -> CGFloat {
+        UIFontMetrics(forTextStyle: role.uiTextStyle).scaledValue(for: role.size)
     }
 
     private static func plexSansName(for weight: Font.Weight) -> String {
@@ -108,12 +167,12 @@ enum Metrics {
 struct Eyebrow: View {
     let text: String
     var color: Color = Palette.inkFaint
-    var size: CGFloat = 11
+    var role: Typo.Role = .detail
     var tracking: CGFloat = 0.88
 
     var body: some View {
         Text(text.uppercased())
-            .font(Typo.mono(size, .semibold))
+            .font(Typo.mono(role, .semibold))
             .tracking(tracking)
             .foregroundStyle(color)
     }
@@ -180,12 +239,12 @@ struct CameraPlaceholder: View {
                 VStack(spacing: 3) {
                     if let caption {
                         Text(caption)
-                            .font(Typo.mono(10.5))
+                            .font(Typo.mono(.micro))
                             .foregroundStyle(Palette.onVideoCaption)
                     }
                     if let subcaption {
                         Text(subcaption)
-                            .font(Typo.mono(10.5))
+                            .font(Typo.mono(.micro))
                             .foregroundStyle(Palette.onVideoCaption)
                     }
                 }

@@ -72,11 +72,11 @@ struct TabBar: View {
                 // positioned: absolute placement drew it over the next tab.
                 HStack(spacing: 4) {
                     Text(label)
-                        .font(Typo.mono(11.5, .semibold))
+                        .font(Typo.mono(.detail, .semibold))
                         .tracking(0.92)
                     if badge > 0 {
                         Text("\(badge)")
-                            .font(Typo.mono(9.5, .bold))
+                            .font(Typo.mono(.micro, .bold))
                             .foregroundStyle(Palette.accentInk)
                             .frame(minWidth: 15, minHeight: 15)
                             .background(

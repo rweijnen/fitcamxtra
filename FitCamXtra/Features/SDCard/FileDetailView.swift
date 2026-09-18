@@ -34,13 +34,13 @@ struct FileDetailView: View {
 
                         if let failure {
                             Text(failure)
-                                .font(Typo.mono(11))
+                                .font(Typo.mono(.detail))
                                 .foregroundStyle(Palette.destructiveText)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
                         Text("Saving copies the file to your phone's album over wifi. The original stays on the card until the loop overwrites it.")
-                            .font(Typo.mono(10.5))
+                            .font(Typo.mono(.micro))
                             .foregroundStyle(Palette.inkQuaternary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -83,10 +83,10 @@ struct FileDetailView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.recordedAt?.formatted(date: .abbreviated, time: .shortened) ?? "Date not reported")
-                    .font(Typo.sans(15, .semibold))
+                    .font(Typo.sans(.cardTitle, .semibold))
                     .foregroundStyle(Palette.ink)
                 Text(file.displayName)
-                    .font(Typo.mono(11))
+                    .font(Typo.mono(.detail))
                     .foregroundStyle(Palette.inkQuaternary)
             }
             Spacer()
@@ -116,7 +116,7 @@ struct FileDetailView: View {
                         HStack(spacing: 5) {
                             Image(systemName: "lock.fill")
                                 .font(.system(size: 9, weight: .semibold))
-                            Text("LOCKED").font(Typo.mono(10))
+                            Text("LOCKED").font(Typo.mono(.micro))
                         }
                         .foregroundStyle(Palette.ink)
                         .padding(.horizontal, 8)
@@ -134,7 +134,7 @@ struct FileDetailView: View {
     private var meta: some View {
         HStack(spacing: 8) {
             Text(file.kind == .photo ? "PHOTO" : "VIDEO")
-                .font(Typo.mono(10, .semibold))
+                .font(Typo.mono(.micro, .semibold))
                 .foregroundStyle(Palette.accentText)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 4)
@@ -144,7 +144,7 @@ struct FileDetailView: View {
                 )
 
             Text(metaLine)
-                .font(Typo.mono(11.5))
+                .font(Typo.mono(.detail))
                 .foregroundStyle(Palette.inkQuaternary)
             Spacer()
         }
@@ -162,7 +162,7 @@ struct FileDetailView: View {
             Task { await save() }
         } label: {
             Text(saveLabel)
-                .font(Typo.sans(15, .semibold))
+                .font(Typo.sans(.cardTitle, .semibold))
                 .foregroundStyle(Palette.accentInk)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 13)
@@ -182,7 +182,7 @@ struct FileDetailView: View {
                 showDeleteConfirm = true
             } label: {
                 Text("Delete")
-                    .font(Typo.sans(14, .semibold))
+                    .font(Typo.sans(.body, .semibold))
                     .foregroundStyle(Palette.destructiveText)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
