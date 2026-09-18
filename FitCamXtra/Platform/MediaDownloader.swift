@@ -49,6 +49,9 @@ final class MediaDownloader {
         configuration.timeoutIntervalForResource = 600
         configuration.allowsCellularAccess = false
         configuration.waitsForConnectivity = false
+        // Two at a time. A grid of tiles will ask for as many as it can draw,
+        // and this camera serves one thing at a time well.
+        configuration.httpMaximumConnectionsPerHost = 2
         session = URLSession(configuration: configuration)
     }
 
@@ -97,7 +100,15 @@ final class MediaDownloader {
         thumbnails.contains(file.cameraPath)
     }
 
-    func thumbnail(for file: MediaFile) async -> UIImage? {
+    /// - Parameter background: true when the app asked for this on its own
+    ///   initiative. Background requests wait for anything a person is
+    ///   waiting on; foreground ones announce themselves so the prefetch
+    ///   stands down instead of competing.
+    ///
+    ///   Without this, scrolling the card during a save reproduced exactly
+    ///   the failure the gate was added to prevent: tiles firing requests at
+    ///   the camera while it was trying to serve an 80 MB download.
+    func thumbnail(for file: MediaFile, background: Bool = false) async -> UIImage? {
         if let cached = thumbnails.image(for: file.cameraPath) { return cached }
         // Failures are remembered too. Without this every redraw of a card of
         // 83 clips asked again, which is a flood of requests at an embedded
@@ -122,6 +133,15 @@ final class MediaDownloader {
         }
 
         guard let request else { return nil }
+        if background {
+            await gate.waitUntilIdle()
+        } else {
+            await gate.beginInteractive()
+        }
+        defer {
+            if !background { Task { await gate.endInteractive() } }
+        }
+
         do {
             let (data, response) = try await session.data(for: request)
             let http = response as? HTTPURLResponse

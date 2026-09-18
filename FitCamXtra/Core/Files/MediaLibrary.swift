@@ -101,7 +101,7 @@ final class MediaLibrary {
             }
     }
 
-    func loadEvents(lastSeenID: String?) async {
+    func loadEvents(lastSeenID: String?, lastSeenAt: Date? = nil) async {
         guard let client else { return }
         // The listing this needs is the listing the card screen needs. Pulling
         // it twice cost a second of an already slow camera for nothing.
@@ -125,6 +125,12 @@ final class MediaLibrary {
         // Anything newer than the last event we showed counts as new.
         if let lastSeenID, let index = events.firstIndex(where: { $0.id == lastSeenID }) {
             unreadEventIDs = Set(events.prefix(index).map(\.id))
+        } else if let lastSeenAt {
+            // The clip itself has been overwritten by the loop, which is
+            // ordinary. Its timestamp still says what had been seen; without
+            // this every locked clip on the card was marked new on every
+            // connection, and the app landed on Events every time.
+            unreadEventIDs = Set(events.filter { ($0.recordedAt ?? .distantPast) > lastSeenAt }.map(\.id))
         } else if lastSeenID == nil {
             unreadEventIDs = []
         } else {
@@ -134,9 +140,9 @@ final class MediaLibrary {
         sink.log(.info, .app, "\(events.count) locked clips, \(unreadEventIDs.count) new")
     }
 
-    func markEventsSeen() -> String? {
+    func markEventsSeen() -> CameraEvent? {
         unreadEventIDs = []
-        return events.first?.id
+        return events.first
     }
 
     // MARK: - Files
@@ -201,7 +207,7 @@ final class MediaLibrary {
                 await self.downloads.gate.waitUntilIdle()
                 if Task.isCancelled { break }
 
-                if await self.downloads.thumbnail(for: file) != nil {
+                if await self.downloads.thumbnail(for: file, background: true) != nil {
                     fetched += 1
                 } else {
                     // The camera has said it will not serve these. Asking 80

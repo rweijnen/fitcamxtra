@@ -160,7 +160,10 @@ public final class DiagnosticsLog {
         }
         out += "\(entries.count) entries\n\n"
 
-        for entry in entries {
+        // Sorted by when each line happened, not by when it arrived. Entries
+        // are recorded through independent tasks, which are not first-in
+        // first-out, and this file is the bug report.
+        for entry in entries.sorted(by: { $0.at < $1.at }) {
             out += Self.line(for: entry)
             if let detail = entry.detail, !detail.isEmpty {
                 let indented = detail

@@ -9,6 +9,11 @@ import Network
 public final class NetworkPathMonitor: @unchecked Sendable {
     private let monitor = NWPathMonitor()
     private let queue = DispatchQueue(label: "nl.remkoweijnen.fitcamxtra.path")
+    /// Both of these are touched from the caller and from the monitor's own
+    /// queue, so they are guarded rather than merely declared unchecked: the
+    /// class asserted a safety it did not have, which is a real race under
+    /// TSan and an error under strict concurrency.
+    private let lock = NSLock()
     private var lastToken: String?
     private var started = false
 
@@ -18,8 +23,12 @@ public final class NetworkPathMonitor: @unchecked Sendable {
     /// of what it changed to. Repeats of the same path are swallowed, because
     /// NWPathMonitor reports the same state more than once.
     public func start(onChange: @escaping @Sendable (String) -> Void) {
-        guard !started else { return }
-        started = true
+        let alreadyStarted = lock.withLock {
+            let was = started
+            started = true
+            return was
+        }
+        guard !alreadyStarted else { return }
 
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
@@ -29,8 +38,12 @@ public final class NetworkPathMonitor: @unchecked Sendable {
                 .joined(separator: ",")
             let token = "\(path.status)|\(interfaces)|\(path.isExpensive)"
 
-            guard token != self.lastToken else { return }
-            self.lastToken = token
+            let isNew = self.lock.withLock {
+                guard token != self.lastToken else { return false }
+                self.lastToken = token
+                return true
+            }
+            guard isNew else { return }
 
             guard path.status == .satisfied else {
                 onChange("no usable network")
@@ -43,8 +56,12 @@ public final class NetworkPathMonitor: @unchecked Sendable {
     }
 
     public func stop() {
-        guard started else { return }
-        started = false
+        let wasStarted = lock.withLock {
+            let was = started
+            started = false
+            return was
+        }
+        guard wasStarted else { return }
         monitor.cancel()
     }
 }

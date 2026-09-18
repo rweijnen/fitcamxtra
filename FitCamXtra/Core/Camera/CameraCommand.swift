@@ -130,6 +130,22 @@ public struct CameraRequest: Sendable, Equatable {
     }
 }
 
+extension CameraCommand {
+    /// True when the reply's `Status` elements carry data rather than a
+    /// result code.
+    ///
+    /// cmd=3014 answers with alternating `Cmd` and `Status` elements where
+    /// each `Status` is that command's current value, and the flat reader
+    /// keeps the first of a repeated name — so "the status" of a 3014 reply
+    /// is the value of its first row. Checking it as a result code passes
+    /// only while that first row happens to be zero: on a unit whose
+    /// snapshot size is set to anything else, every settings read would fail
+    /// and the whole screen would go blank.
+    var statusCarriesData: Bool {
+        self == .allConfigValues
+    }
+}
+
 public enum NetworkMode: Int, Sendable, CaseIterable {
     case accessPoint = 0
     case station = 1

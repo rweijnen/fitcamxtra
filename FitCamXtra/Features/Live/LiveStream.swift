@@ -27,6 +27,12 @@ final class LiveStream {
     /// background prefetch stands down for as long as it runs.
     @ObservationIgnored private let gate: CameraActivityGate
     @ObservationIgnored private var holdsGate = false
+    /// Gate calls run one after another through this chain. They were two
+    /// independent unstructured tasks, so a quick start-then-stop could run
+    /// the release before the claim; the actor clamps at zero, and the count
+    /// then sat at one for the rest of the session with the background
+    /// prefetch silently blocked behind it.
+    @ObservationIgnored private var gateWork: Task<Void, Never>?
 
     init(sink: LogSink, gate: CameraActivityGate) {
         self.sink = sink
@@ -44,7 +50,7 @@ final class LiveStream {
         status = .connecting
         renderer.reset()
         holdsGate = true
-        Task { [gate] in await gate.beginInteractive() }
+        enqueueGate { await $0.beginInteractive() }
 
         Task { [weak self] in
             var streamURL: String?
@@ -98,15 +104,27 @@ final class LiveStream {
     }
 
     func stop() {
-        if holdsGate {
-            holdsGate = false
-            Task { [gate] in await gate.endInteractive() }
-        }
+        releaseGate()
         let existing = client
         client = nil
         host = nil
         status = .stopped
         Task { await existing?.stop() }
+    }
+
+    /// Serialises the gate's begin/end so they cannot land out of order.
+    private func enqueueGate(_ work: @escaping @Sendable (CameraActivityGate) async -> Void) {
+        let previous = gateWork
+        gateWork = Task { [gate] in
+            await previous?.value
+            await work(gate)
+        }
+    }
+
+    private func releaseGate() {
+        guard holdsGate else { return }
+        holdsGate = false
+        enqueueGate { await $0.endInteractive() }
     }
 
     private var isFailed: Bool {
@@ -122,6 +140,10 @@ final class LiveStream {
             status = .playing
         case .failed(let reason):
             status = .failed(reason)
+            // Nothing is being streamed any more, so the prefetch and
+            // anything else waiting should not stay blocked behind a dead
+            // session while the user looks at the error.
+            releaseGate()
         case .stopped:
             if !isFailed { status = .stopped }
         }

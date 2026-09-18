@@ -202,9 +202,13 @@ public struct IncidentBundle: Sendable, Equatable {
         }
 
         let tolerance = segmentLength / 2
+        // Clips already in the bundle, so no clip can be picked twice.
+        var taken: Set<String> = [event.path]
+
         for step in 1...range.neighbourCount {
             let before = anchor.addingTimeInterval(-segmentLength * Double(step))
-            if let match = nearest(to: before, in: files, tolerance: tolerance, excluding: event.path) {
+            if let match = nearest(to: before, in: files, tolerance: tolerance, excluding: taken) {
+                taken.insert(match.path)
                 segments.insert(
                     Segment(id: match.id, startedAt: match.recordedAt,
                             duration: match.duration ?? segmentLength, role: .before, file: match),
@@ -213,7 +217,8 @@ public struct IncidentBundle: Sendable, Equatable {
             }
 
             let after = anchor.addingTimeInterval(segmentLength * Double(step))
-            if let match = nearest(to: after, in: files, tolerance: tolerance, excluding: event.path) {
+            if let match = nearest(to: after, in: files, tolerance: tolerance, excluding: taken) {
+                taken.insert(match.path)
                 segments.append(
                     Segment(id: match.id, startedAt: match.recordedAt,
                             duration: match.duration ?? segmentLength, role: .after, file: match)
@@ -228,10 +233,15 @@ public struct IncidentBundle: Sendable, Equatable {
         to date: Date,
         in files: [MediaFile],
         tolerance: TimeInterval,
-        excluding path: String
+        excluding taken: Set<String>
     ) -> MediaFile? {
+        // Every clip already in the bundle is excluded, not just the locked
+        // one: with a two-minute range and a 30 second tolerance, a neighbour
+        // at -90s satisfies both steps, and the same clip went in twice — two
+        // segments with one id, and 80 MB downloaded and written to Photos
+        // twice when the incident was saved.
         let candidates = files.filter {
-            $0.kind == .video && $0.path != path && $0.recordedAt != nil
+            $0.kind == .video && !taken.contains($0.path) && $0.recordedAt != nil
         }
         guard let best = candidates.min(by: {
             abs($0.recordedAt!.timeIntervalSince(date)) < abs($1.recordedAt!.timeIntervalSince(date))

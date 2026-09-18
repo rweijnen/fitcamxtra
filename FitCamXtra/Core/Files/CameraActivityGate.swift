@@ -13,8 +13,9 @@ import Foundation
 public actor CameraActivityGate {
     /// How many things a person is waiting on right now.
     private var interactiveCount = 0
-    /// Resumed when the last of them finishes.
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    /// Resumed when the last of them finishes. Keyed so a waiter that is
+    /// cancelled can take itself out again.
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
     public init() {}
 
@@ -38,18 +39,35 @@ public actor CameraActivityGate {
     }
 
     /// Background work calls this before each item. It returns immediately
-    /// when nobody is waiting on the camera, and otherwise once they are done.
+    /// when nobody is waiting on the camera, once they are done, or at once
+    /// if the caller is cancelled — a prefetch that is told to stop should
+    /// not sit here until a live stream ends.
     public func waitUntilIdle() async {
         guard interactiveCount > 0 else { return }
-        await withCheckedContinuation { continuation in
-            waiters.append(continuation)
+
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume()
+                } else {
+                    waiters[id] = continuation
+                }
+            }
+        } onCancel: {
+            Task { await self.stopWaiting(id) }
         }
+    }
+
+    private func stopWaiting(_ id: UUID) {
+        guard let continuation = waiters.removeValue(forKey: id) else { return }
+        continuation.resume()
     }
 
     private func finishInteractive() {
         interactiveCount = max(interactiveCount - 1, 0)
         guard interactiveCount == 0, !waiters.isEmpty else { return }
-        let resuming = waiters
+        let resuming = waiters.values
         waiters.removeAll()
         for continuation in resuming {
             continuation.resume()

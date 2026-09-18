@@ -12,6 +12,10 @@ struct RememberedCamera: Codable, Equatable {
     var lastSSID: String?
     var ssidPrefix: String
     var lastSeenEventID: String?
+    /// When the newest event we have shown was recorded. Identity alone is
+    /// not enough on a camera that loop-overwrites: the remembered clip is
+    /// routinely gone, and then every locked clip counts as new.
+    var lastSeenEventAt: Date?
     var autoSaveNewEvents: Bool
     /// The camera's own access point, as the camera reported it (cmd=3029).
     /// Empty until one has said so: the name cannot be derived from the model,
@@ -40,6 +44,7 @@ struct RememberedCamera: Codable, Equatable {
         lastSSID: String?,
         ssidPrefix: String,
         lastSeenEventID: String?,
+        lastSeenEventAt: Date? = nil,
         autoSaveNewEvents: Bool,
         homeSSID: String?,
         autoConnectEnabled: Bool
@@ -49,6 +54,7 @@ struct RememberedCamera: Codable, Equatable {
         self.lastSSID = lastSSID
         self.ssidPrefix = ssidPrefix
         self.lastSeenEventID = lastSeenEventID
+        self.lastSeenEventAt = lastSeenEventAt
         self.autoSaveNewEvents = autoSaveNewEvents
         self.homeSSID = homeSSID
         self.autoConnectEnabled = autoConnectEnabled
@@ -67,6 +73,7 @@ struct RememberedCamera: Codable, Equatable {
         let storedPrefix = try container.decodeIfPresent(String.self, forKey: .ssidPrefix) ?? ""
         ssidPrefix = storedPrefix == "CAR-WA7053" ? "" : storedPrefix
         lastSeenEventID = try container.decodeIfPresent(String.self, forKey: .lastSeenEventID)
+        lastSeenEventAt = try container.decodeIfPresent(Date.self, forKey: .lastSeenEventAt)
         autoSaveNewEvents = try container.decodeIfPresent(Bool.self, forKey: .autoSaveNewEvents) ?? false
         homeSSID = try container.decodeIfPresent(String.self, forKey: .homeSSID)
         autoConnectEnabled = try container.decodeIfPresent(Bool.self, forKey: .autoConnectEnabled) ?? true
@@ -349,7 +356,8 @@ final class AppState {
     /// Called when the Events tab is opened, so the badge clears.
     func markEventsSeen() {
         guard let newest = library.markEventsSeen() else { return }
-        remembered.lastSeenEventID = newest
+        remembered.lastSeenEventID = newest.id
+        remembered.lastSeenEventAt = newest.recordedAt ?? remembered.lastSeenEventAt
         RememberedStore.save(remembered)
     }
 
@@ -385,7 +393,12 @@ final class AppState {
             prefixLength: prefixLength
         ) { [weak self] progress in
             Task { @MainActor [weak self] in
-                self?.apply(progress)
+                guard let self else { return }
+                // A superseded run keeps reporting while it winds down, and
+                // its "No camera answered" would land on the screen someone
+                // is reading while the current sweep is still going.
+                guard generation == nil || generation == self.discoveryGeneration else { return }
+                self.apply(progress)
             }
         }
 
@@ -490,7 +503,8 @@ final class AppState {
 
         // Ask the camera what its own access point is called, so Connect can
         // name it instead of guessing.
-        if let response = try? await client.send(.wifiInfo) {
+        if remembered.lastSSID == nil || remembered.ssidPrefix.isEmpty,
+           let response = try? await client.send(.wifiInfo) {
             let reported = CameraAccessPoint.parse(Data(response.raw.utf8))
             if let ssid = reported.ssid, !ssid.isEmpty {
                 remembered.lastSSID = ssid
@@ -507,7 +521,8 @@ final class AppState {
         settings.attach(client: client)
         library.attach(client: client, host: camera.host)
         await refreshStatus()
-        await library.loadEvents(lastSeenID: remembered.lastSeenEventID)
+        await library.loadEvents(lastSeenID: remembered.lastSeenEventID,
+                                 lastSeenAt: remembered.lastSeenEventAt)
     }
 
     // MARK: - Network mode

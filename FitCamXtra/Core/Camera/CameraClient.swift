@@ -49,7 +49,7 @@ public actor CameraClient {
                           detail: String(response.raw.prefix(600)))
                 throw CameraError.commandUnsupported(command: request.command.rawValue)
             }
-            if let status = response.status, status != 0 {
+            if let status = response.status, status != 0, !request.command.statusCarriesData {
                 sink?.log(.warning, .http, "\(name) returned status \(status)",
                           detail: String(response.raw.prefix(600)))
                 throw CameraError.commandFailed(command: request.command.rawValue, status: status)

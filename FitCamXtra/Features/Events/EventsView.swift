@@ -86,7 +86,8 @@ struct EventsView: View {
         }
         .background(Palette.bg)
         .refreshable {
-            await library.loadEvents(lastSeenID: state.remembered.lastSeenEventID)
+            await library.loadEvents(lastSeenID: state.remembered.lastSeenEventID,
+                                     lastSeenAt: state.remembered.lastSeenEventAt)
         }
         .onAppear { state.markEventsSeen() }
         .fullScreenCover(item: $openEvent) { event in
