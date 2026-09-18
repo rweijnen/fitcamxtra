@@ -19,13 +19,14 @@ final class LiveStream {
     private(set) var status: Status = .stopped
     private(set) var framesRendered = 0
 
-    @ObservationIgnored let renderer = VideoRenderer()
+    @ObservationIgnored let renderer: VideoRenderer
     @ObservationIgnored private var client: RTSPClient?
     @ObservationIgnored private var host: String?
     @ObservationIgnored private let sink: LogSink
 
     init(sink: LogSink) {
         self.sink = sink
+        self.renderer = VideoRenderer(sink: sink)
     }
 
     func start(host: String) {

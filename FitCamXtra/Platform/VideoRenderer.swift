@@ -24,7 +24,16 @@ final class VideoRenderer {
     private(set) var framesRendered = 0
     private(set) var lastError: String?
 
-    init() {
+    /// A black Live screen used to produce no diagnostics at all: the RTSP
+    /// side logged that it was playing, and everything after that was silent.
+    /// Decoding is where this fails most often, so it says what it did.
+    private let sink: LogSink?
+    /// Logged once each, because these fire per frame.
+    private var hasLoggedFirstFrame = false
+    private var hasLoggedFirstNAL = false
+
+    init(sink: LogSink? = nil) {
+        self.sink = sink
         displayLayer.videoGravity = .resizeAspect
     }
 
@@ -35,6 +44,8 @@ final class VideoRenderer {
         sets = ParameterSets()
         framesRendered = 0
         lastError = nil
+        hasLoggedFirstFrame = false
+        hasLoggedFirstNAL = false
         displayLayer.flushAndRemoveImage()
     }
 
@@ -46,11 +57,33 @@ final class VideoRenderer {
     }
 
     private func rebuildFormatDescription() {
-        guard sets.isComplete(for: codec) else { return }
+        guard sets.isComplete(for: codec) else {
+            sink?.log(.debug, .app,
+                      "\(codec.label) parameter sets are still incomplete",
+                      detail: describeSets())
+            return
+        }
         formatDescription = Self.makeFormatDescription(codec: codec, sets: sets)
         lastError = formatDescription == nil
             ? "The camera's \(codec.label) parameter sets could not be read"
             : nil
+
+        if formatDescription == nil {
+            sink?.log(.error, .app,
+                      "CoreMedia would not build a \(codec.label) format description",
+                      detail: describeSets())
+        } else {
+            sink?.log(.info, .app, "\(codec.label) format description ready", detail: describeSets())
+        }
+    }
+
+    private func describeSets() -> String {
+        """
+        codec  \(codec.label)
+        vps    \(sets.vps?.count.description ?? "none") bytes
+        sps    \(sets.sps?.count.description ?? "none") bytes
+        pps    \(sets.pps?.count.description ?? "none") bytes
+        """
     }
 
     func handle(_ unit: VideoNALUnit) {
@@ -66,6 +99,15 @@ final class VideoRenderer {
             return
         }
         guard unit.isVideoFrame else { return }
+
+        if !hasLoggedFirstNAL {
+            hasLoggedFirstNAL = true
+            sink?.log(.info, .app,
+                      "First video NAL from the camera: \(unit.bytes.count) bytes",
+                      detail: formatDescription == nil
+                          ? "No format description yet, so this frame cannot be decoded."
+                          : nil)
+        }
 
         // A change of timestamp means the previous frame is complete.
         if let pending = pendingTimestamp, pending != unit.timestamp {
@@ -83,7 +125,17 @@ final class VideoRenderer {
             pendingNALs.removeAll(keepingCapacity: true)
             pendingTimestamp = nil
         }
-        guard !pendingNALs.isEmpty, let formatDescription else { return }
+        guard !pendingNALs.isEmpty else { return }
+        guard let formatDescription else {
+            // Frames arriving with no format description is the usual reason
+            // for a black screen, and it is worth saying once.
+            if lastError == nil {
+                lastError = "Frames are arriving but the camera's \(codec.label) parameter sets have not"
+                    + " been read, so nothing can be decoded"
+                sink?.log(.warning, .app, lastError ?? "", detail: describeSets())
+            }
+            return
+        }
 
         // AVCC: each NAL prefixed with a 4-byte big-endian length.
         var avcc: [UInt8] = []
@@ -98,6 +150,8 @@ final class VideoRenderer {
         }
 
         guard let sampleBuffer = Self.makeSampleBuffer(avcc: avcc, format: formatDescription) else {
+            sink?.log(.error, .app,
+                      "CoreMedia would not wrap a \(avcc.count)-byte frame in a sample buffer")
             return
         }
 
@@ -117,16 +171,31 @@ final class VideoRenderer {
 
         if #available(iOS 17.0, *) {
             if displayLayer.sampleBufferRenderer.status == .failed {
+                reportLayerFailure(displayLayer.sampleBufferRenderer.error)
                 displayLayer.sampleBufferRenderer.flush()
             }
             displayLayer.sampleBufferRenderer.enqueue(sampleBuffer)
         } else {
             if displayLayer.status == .failed {
+                reportLayerFailure(displayLayer.error)
                 displayLayer.flush()
             }
             displayLayer.enqueue(sampleBuffer)
         }
         framesRendered += 1
+
+        if !hasLoggedFirstFrame {
+            hasLoggedFirstFrame = true
+            sink?.log(.info, .app, "First frame decoded and shown (\(avcc.count) bytes)")
+        }
+    }
+
+    /// The display layer fails asynchronously, inside the decoder, so this is
+    /// the only place its reason is ever visible.
+    private func reportLayerFailure(_ error: Error?) {
+        let reason = error?.localizedDescription ?? "no reason given"
+        lastError = "The decoder rejected the stream: \(reason)"
+        sink?.log(.error, .app, "The display layer failed after \(framesRendered) frames: \(reason)")
     }
 
     // MARK: - CoreMedia plumbing
