@@ -5,8 +5,8 @@ rem Fetches the newest installable build from CI and files it under its build
 rem number, so what is on the phone can always be traced back to a run.
 rem
 rem Usage:  get-latest-ipa.bat [-install]
-rem         -install  also pushes it to the attached device with
-rem                   ideviceinstaller, when that is on PATH.
+rem         -install  also pushes it to the attached device, using iMazing's
+rem                   CLI when it is installed and ideviceinstaller otherwise.
 rem
 rem The IPA is ad-hoc signed for the devices in the provisioning profile, so it
 rem installs as it is. Nothing here re-signs anything.
@@ -67,24 +67,34 @@ echo Saved %TARGET%
 if /i not "%~1"=="-install" (
   echo.
   echo To put it on the phone: get-latest-ipa.bat -install
-  echo Or drag the file onto iMazing or Sideloadly.
+  echo Or drag the file onto iMazing.
+  exit /b 0
+)
+
+set IMAZING=C:\Program Files\DigiDNA\iMazing\iMazing-CLI.exe
+
+if exist "%IMAZING%" (
+  echo Installing build %BUILD% with iMazing...
+  "%IMAZING%" --device-install-app --udid any --source-path "%TARGET%"
+  if errorlevel 1 goto :install_failed
+  echo Done.
   exit /b 0
 )
 
 where ideviceinstaller >nul 2>&1
 if errorlevel 1 (
-  echo ideviceinstaller is not on PATH, so nothing was installed.
-  echo It comes with libimobiledevice; iMazing and Sideloadly will also take
-  echo the file above.
+  echo Neither iMazing's CLI nor ideviceinstaller was found, so nothing was
+  echo installed. The file above can be dragged onto iMazing instead.
   exit /b 1
 )
 
-echo Installing build %BUILD% on the attached device...
+echo Installing build %BUILD% with ideviceinstaller...
 ideviceinstaller -i "%TARGET%"
-if errorlevel 1 (
-  echo The install failed. Check the phone is plugged in, unlocked, and that it
-  echo trusts this computer.
-  exit /b 1
-)
+if errorlevel 1 goto :install_failed
 echo Done.
 exit /b 0
+
+:install_failed
+echo The install failed. Check the phone is plugged in, unlocked and trusting
+echo this computer. --device-list on the iMazing CLI says what it can see.
+exit /b 1
