@@ -3,3 +3,4 @@
 *.jpg binary
 *.p12 binary
 *.mobileprovision binary
+*.bat text eol=crlf
