@@ -4,6 +4,23 @@ Confirmed against a CAR-WA7053 on 17 September 2026, from a diagnostics export.
 Where this disagrees with the names in the firmware's dispatch table, the
 observed behaviour wins and the disagreement is noted.
 
+**The table itself is recovered.** `FITCAMX_CGI_API.md` (kept outside this
+repository, with the firmware image) holds all 68 entries of the device's own
+command table, read out of the CAR-WA7053-230114 main app at `DAT_00fc61e8`,
+with each command's dispatch style, handler address, whether it takes `par`,
+and the config field index it writes. That file is the authority on *what a
+command is*; this file remains the authority on *what it answers*, because
+several table names are wrong about behaviour.
+
+Two things from it that the app relies on:
+
+- **`Status = -256` means the command is not in this build's table.** That is
+  how a different firmware says it cannot do something, and it is what the app
+  treats as "unsupported" rather than as a failure.
+- **A separate TCP service on port 1968 (MsdcNvt) is the memory-read
+  primitive.** No CGI command reads arbitrary memory. The app speaks only to
+  the CGI and the file server, and has no business on 1968.
+
 ```
 GET http://<cam>/?custom=1&cmd=<N>[&par=<int>][&str=<string>]  ->  XML
 ```
@@ -124,6 +141,17 @@ a=control:track1
 The stream is LIVE555 at `rtsp://<cam>:554/xxx.mov`, and RTP interleaves over
 the same TCP connection.
 
+**2011 is `Config_Snapshot_SensorLevel`, config field 0x4f.** The table's own
+name, against its own config index. The app shipped it as the driving G-sensor;
+that row is now withdrawn rather than relabelled on another guess.
+
+**4002 is a second `GetThumbnail`**, sharing handler 0x8800a0 with 4001. Worth
+trying if 4001 keeps answering with something that is not an image.
+
+**3002 `Basic_Device_GetSupportCmd` exists and is never called.** It would
+answer, for this unit, most of what the rest of this file asks — including
+whether a rear channel is present.
+
 ## Still open
 
 | Question | Why it matters |
@@ -132,8 +160,7 @@ the same TCP connection.
 | **3024 SD status** answers `1`. Scale unknown. | Shown as a warning only when it is not 1; no percentage is displayed because none is known. |
 | **3019 battery** answers `5`. Scale unknown. Is `8005` the numeric value? | The battery chip is hidden rather than showing an invented percentage. |
 | **2020 = 50, 2021 = 0, 2024 = 0.** Config indices 0x32, 0x33, 0x36, next to the bitrate at 0x34. | These are the likely homes of **Time Stamp** and **Motion Detection**, which the app leaves out rather than guess. 50 does not look boolean. |
-| **2011** is named Config_Snapshot_SensorLevel. Is it the G-sensor or a snapshot setting? | Shipped as Driving Collision Sensing, still provisional. |
-| **3038 = 2, 8005 = 2, 8020 = 2**, all mapped to config index 0x5b in the table. | Three commands cannot share one field. Which one is parking sensitivity? |
+| **3038, 8005 and 8020** all carry config index 0x5b in the recovered table, and all three post the same event 0x14020034. The table names them Config_Parking_Sensor, DEV_GET_BATTERY_VALUE and Manage_Sdcard_SetDefault. | Three different things cannot share one config field; one of the three rows is probably a table artefact. 3038 is shipped as parking sensitivity on the strength of its name. |
 | **2003 loop** reports 1. Minutes, or an index? | Shipped as minutes, still provisional. |
 | **2005 exposure** reports 6. Range and step? | Shipped as an index 0 to 8, still provisional. |
 | **3008 language** reports 6. Which language is 6? | Shipped with a guessed table, still provisional. |

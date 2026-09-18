@@ -167,20 +167,12 @@ public enum SettingsRegistry {
         ),
 
         // MARK: Advanced
-        CameraSetting(
-            id: "collision",
-            group: .advanced,
-            label: "Driving Collision Sensing",
-            hint: "Locks the current clip on impact while driving",
-            command: .sensorLevel,
-            kind: .options([
-                SettingOption(0, "Off"),
-                SettingOption(1, "Least"),
-                SettingOption(2, "Medium"),
-                SettingOption(3, "Most"),
-            ]),
-            provisional: true
-        ),
+        // 2011 is not shown. The firmware's own command table calls it
+        // Config_Snapshot_SensorLevel, against config field 0x4f, so the
+        // driving G-sensor it was shipped as is somebody else's setting.
+        // Telling a dashcam owner their collision sensing is off, when the
+        // row may control something about stills, is worse than not offering
+        // the row at all. It comes back when hardware says what it does.
         CameraSetting(
             id: "language",
             group: .advanced,

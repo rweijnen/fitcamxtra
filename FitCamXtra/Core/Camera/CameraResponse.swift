@@ -33,6 +33,9 @@ public struct CameraResponse: Sendable, Equatable {
 
     /// The firmware reports Status -256 for a command missing from its table.
     public var status: Int? { int("status") }
+    /// The firmware's dispatcher answers -256 for a command number that is not
+    /// in its table, which is how a unit with a different build says it cannot
+    /// do something.
     public var isCommandUnsupported: Bool { status == -256 }
 }
 
