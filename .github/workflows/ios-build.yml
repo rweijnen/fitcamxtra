@@ -87,6 +87,22 @@ jobs:
             echo "can_sign=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # An ad-hoc profile is optional. With one, every build also leaves an
+      # IPA that installs straight onto the registered devices, which takes
+      # App Store Connect's processing time and its daily upload limit out of
+      # the loop when the point is just to try something in the car.
+      - name: Decide whether we can export ad-hoc
+        id: adhoc
+        env:
+          PROFILE: ${{ secrets.APPLE_ADHOC_PROFILE_BASE64 }}
+        run: |
+          if [ -n "$PROFILE" ]; then
+            echo "can_export=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No ad-hoc profile; skipping the directly installable build."
+            echo "can_export=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # TestFlight upload stays inert until an App Store Connect API key is
       # stored, so the build still passes without one.
       - name: Decide whether we can upload to TestFlight
@@ -121,6 +137,7 @@ jobs:
           APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_ADHOC_PROFILE_BASE64: ${{ secrets.APPLE_ADHOC_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           set -euo pipefail
@@ -144,6 +161,18 @@ jobs:
           UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$RUNNER_TEMP/profile.plist")
           cp "$PROFILE_PATH" "$PROFILES_DIR/$UUID.mobileprovision"
           echo "PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
+
+          # The ad-hoc profile is a second profile over the same app id and
+          # the same distribution certificate; only the devices differ.
+          if [ -n "${APPLE_ADHOC_PROFILE_BASE64:-}" ]; then
+            ADHOC_PATH="$RUNNER_TEMP/adhoc.mobileprovision"
+            echo -n "$APPLE_ADHOC_PROFILE_BASE64" | base64 --decode -o "$ADHOC_PATH"
+            security cms -D -i "$ADHOC_PATH" > "$RUNNER_TEMP/adhoc.plist"
+            ADHOC_UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$RUNNER_TEMP/adhoc.plist")
+            cp "$ADHOC_PATH" "$PROFILES_DIR/$ADHOC_UUID.mobileprovision"
+            echo "ADHOC_PROFILE_UUID=$ADHOC_UUID" >> "$GITHUB_ENV"
+            echo "Ad-hoc profile installed: $ADHOC_UUID"
+          fi
 
       - name: Archive
         if: steps.signing.outputs.can_sign == 'true'
@@ -197,6 +226,52 @@ jobs:
             -exportPath "$EXPORT_PATH" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
             | xcbeautify --renderer github-actions
+
+      # Same archive, exported again for the devices in the ad-hoc profile.
+      # `release-testing` is what Xcode 15 and later call ad-hoc.
+      - name: Export an installable IPA
+        if: >-
+          steps.signing.outputs.can_sign == 'true' &&
+          steps.adhoc.outputs.can_export == 'true'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          BUNDLE_ID: nl.remkoweijnen.fitcamxtra
+          ADHOC_EXPORT_PATH: ${{ github.workspace }}/build/adhoc
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/AdHocExportOptions.plist" << PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>release-testing</string>
+            <key>destination</key><string>export</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>$BUNDLE_ID</key><string>$ADHOC_PROFILE_UUID</string>
+            </dict>
+            <key>compileBitcode</key><false/>
+          </dict>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportPath "$ADHOC_EXPORT_PATH" \
+            -exportOptionsPlist "$RUNNER_TEMP/AdHocExportOptions.plist" \
+            | xcbeautify --renderer github-actions
+
+      - name: Upload the installable IPA
+        if: >-
+          steps.signing.outputs.can_sign == 'true' &&
+          steps.adhoc.outputs.can_export == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FitCamXtra-adhoc-ipa
+          path: ${{ github.workspace }}/build/adhoc/*.ipa
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload IPA
         if: steps.signing.outputs.can_sign == 'true'
