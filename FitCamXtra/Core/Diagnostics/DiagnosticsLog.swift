@@ -51,8 +51,52 @@ public struct LogEntry: Sendable, Identifiable {
         self.at = at
         self.level = level
         self.category = category
-        self.message = message
-        self.detail = detail
+        self.message = Redaction.applied(to: message)
+        self.detail = detail.map(Redaction.applied(to:))
+    }
+}
+
+/// Takes secrets out of anything on its way into the log.
+///
+/// The log is meant to be shared: it goes to the share sheet as a file and to
+/// the pasteboard. The camera's own access point passphrase comes back in
+/// every cmd=3029 reply, and the whole reply is logged, so a shared export
+/// carried the wifi password of the camera five times over. The network
+/// screen promises the opposite.
+///
+/// Redaction happens here, at the point of record, rather than at export:
+/// anything that logs a reply is covered without having to remember.
+enum Redaction {
+    /// XML elements whose contents are secret whatever the camera calls them.
+    private static let secretElements = ["passphrase", "password", "passwd", "pwd", "key"]
+
+    static func applied(to text: String) -> String {
+        var out = text
+        for element in secretElements {
+            out = replacingContents(of: element, in: out)
+        }
+        return out
+    }
+
+    /// Replaces `<name>secret</name>` with `<name>(hidden)</name>`, in any
+    /// case, without a regular expression so the whole thing stays portable.
+    private static func replacingContents(of element: String, in text: String) -> String {
+        var result = ""
+        var remainder = Substring(text)
+        let open = "<" + element + ">"
+        let close = "</" + element + ">"
+
+        while let start = remainder.range(of: open, options: .caseInsensitive) {
+            guard let end = remainder.range(of: close, options: .caseInsensitive, range: start.upperBound..<remainder.endIndex) else {
+                break
+            }
+            result += remainder[remainder.startIndex..<start.upperBound]
+            result += "(hidden)"
+            result += remainder[end.lowerBound..<end.upperBound]
+            remainder = remainder[end.upperBound...]
+        }
+        result += remainder
+        return result
     }
 }
 
