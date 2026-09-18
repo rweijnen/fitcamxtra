@@ -93,6 +93,19 @@ command returned nothing usable; it returned no *firmware* string, and the
 model was being read and stored all along. The name on the Settings screen
 comes from this and is not invented.
 
+**3032 takes station credentials as `<ssid>:<passphrase>`.** Confirmed by
+driving the camera directly:
+
+```
+cmd=3032&str=WiFi-IoT-24:zeergeheimwachtwoord
+cmd=3033&par=1      # station mode
+cmd=3021            # save
+cmd=3018            # restart the wifi
+```
+
+The separator is a colon, sent literally rather than percent-encoded. An SSID
+containing a colon has no representation here.
+
 **The camera answers ICMP echo.** Confirmed on hardware. Discovery pings the
 range first and asks only the addresses that reply for `cmd=3012`, which turns
 253 connection attempts into a handful. The full HTTP sweep still runs when the

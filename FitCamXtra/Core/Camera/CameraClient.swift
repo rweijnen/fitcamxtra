@@ -114,8 +114,24 @@ public actor CameraClient {
 
     /// Credentials, then the mode flip, then the save that makes it survive a
     /// reboot on patched firmware, then a wifi restart.
+    ///
+    /// Confirmed against the camera: 3032 takes `str=<ssid>:<passphrase>`,
+    /// separated by a colon, followed by 3033, 3021 and 3018 in that order.
+    /// The app previously sent a tab, which nothing supported.
+    ///
+    /// An SSID containing a colon cannot be expressed this way, and the
+    /// camera has no other form we know of, so it is refused rather than sent
+    /// as something the camera would split in the wrong place — the failure
+    /// this avoids is the camera leaving its own network holding credentials
+    /// it cannot use, which takes a physical reset to undo.
     public func applyStationMode(ssid: String, passphrase: String) async throws {
-        try await send(.setStationCredentials, str: ssid + "\t" + passphrase)
+        guard !ssid.contains(":") else {
+            throw CameraError.malformedResponse(
+                "This network's name contains a colon, which the camera uses to "
+                + "separate the name from the password. It cannot be set from here."
+            )
+        }
+        try await send(.setStationCredentials, str: ssid + ":" + passphrase)
         try await send(.setNetworkMode, par: NetworkMode.station.rawValue)
         try await send(.saveConfig)
         try await send(.rebootWifi)

@@ -37,7 +37,6 @@ flag** — a guess is currently drawn exactly like a confirmed value.
 
 | cmd | Used for | The guess | Risk if wrong | How to check |
 | ---: | --- | --- | --- | --- |
-| 3032 | Station-mode credentials | SSID and passphrase joined by a tab: `str=<ssid>\t<passphrase>`, percent-encoded to `%09`. **3032 appears nowhere in FIRMWARE_API.md** | **The worst failure in the app.** A wrong separator means the camera leaves its own access point holding credentials it cannot use, joins nothing, and is only recoverable by a physical factory reset | *firmware* — read the 3032 handler and see how it splits `str`. Until then, treat station mode as unproven |
 | 4001 | Thumbnails | `str=<camera path>`, e.g. `A:\Novatek\MOVIE\x.MP4`, answering with image bytes | Blank tiles. Harmless, and now logged: the app records the first 300 bytes of whatever comes back instead | Open the SD card screen and export the diagnostics. The log names what the camera sent |
 | 4003 | Delete | Same `str` form, with the file server's `?del=1` as the fallback | A delete that silently does nothing, or deletes the wrong file | Delete one clip, re-read the listing, confirm that file and only that file is gone |
 | 3015 | The card listing | Sent with `par: 0` for the full listing and without `par` for events. The doc records the reply in detail but never mentions a parameter, and the doc's own rule is that `par` means *set* | Unclear — it works, so `par: 0` is evidently harmless | Send it both ways and compare the replies. Then record which form is right in FIRMWARE_API.md |
@@ -88,7 +87,6 @@ from nowhere. Each is either a missing feature or a decision worth recording.
 
 Everything above that is marked *firmware*, plus:
 
-- **3032's parameter format.** The highest-value single answer in this file.
 - **Which of 3038, 8005, 8020 owns config index 0x5b**, since all three cannot.
 - **Whether 2011 is the G-sensor or a stills setting.**
 - **The language table for 3008**, which reports 6 against a guessed table of 0–3.

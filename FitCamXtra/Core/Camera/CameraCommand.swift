@@ -114,7 +114,12 @@ public struct CameraRequest: Sendable, Equatable {
                 (byte >= 0x41 && byte <= 0x5A) ||
                 (byte >= 0x61 && byte <= 0x7A) ||
                 (byte >= 0x30 && byte <= 0x39) ||
-                scalar == "-" || scalar == "_" || scalar == "." || scalar == "~"
+                scalar == "-" || scalar == "_" || scalar == "." || scalar == "~" ||
+                // The station-mode credentials were confirmed on hardware with
+                // a literal colon between the name and the password. Percent
+                // encoding it assumes the firmware decodes, which is not
+                // something this CGI has been shown to do.
+                scalar == ":"
             if isUnreserved {
                 out.unicodeScalars.append(scalar)
             } else {
