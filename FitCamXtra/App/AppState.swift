@@ -365,6 +365,25 @@ final class AppState {
 
     func cameraClient() -> CameraClient? { client }
 
+    /// Clips already copied to Photos from this camera, so the card screen can
+    /// say which ones are done. Kept per camera and across launches: a clip is
+    /// immutable and uniquely named, so once it is in Photos it stays saved.
+    private(set) var savedFileIDs: Set<String> = []
+
+    func hasBeenSaved(_ file: MediaFile) -> Bool {
+        savedFileIDs.contains(file.id)
+    }
+
+    func markSaved(_ file: MediaFile) {
+        guard !savedFileIDs.contains(file.id) else { return }
+        savedFileIDs.insert(file.id)
+        SavedFileStore.save(savedFileIDs, cameraID: remembered.lastHost ?? "camera")
+    }
+
+    private func loadSavedFileIDs() {
+        savedFileIDs = SavedFileStore.load(cameraID: remembered.lastHost ?? "camera")
+    }
+
     /// Launch lands on Events when something is new, otherwise Live.
     func landingTab() -> AppTab {
         unreadCount > 0 ? .events : .live
@@ -516,6 +535,8 @@ final class AppState {
             }
         }
 
+        loadSavedFileIDs()
+
         diagnostics.setContext("camera", camera.model ?? "unreported")
         diagnostics.setContext("firmware", camera.firmware ?? "unreported")
         diagnostics.setContext("address", camera.host)
@@ -576,6 +597,8 @@ final class AppState {
             // The card is empty now. Without this the app kept listing every
             // clip that had just been erased, from its own cache.
             library.forgetCache()
+        SavedFileStore.clear(cameraID: remembered.lastHost ?? "camera")
+        savedFileIDs = []
             await library.loadFiles()
             await refreshStatus()
             return

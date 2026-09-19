@@ -237,7 +237,8 @@ final class MediaDownloader {
     // MARK: - Saving
 
     /// Downloads one file and adds it to the photo library.
-    func saveToPhotos(_ file: MediaFile, progress: (@MainActor (Double) -> Void)? = nil) async throws {
+    func saveToPhotos(_ file: MediaFile,
+                      progress: (@MainActor (TransferProgress) -> Void)? = nil) async throws {
         guard let url = url(for: file.path) else { throw DownloadError.notConnected }
         guard await requestPhotosPermission() else { throw DownloadError.photosDenied }
 
@@ -316,7 +317,7 @@ final class MediaDownloader {
     /// reclaims on its own.
     func exportForSharing(
         _ file: MediaFile,
-        progress: (@MainActor (Double) -> Void)? = nil
+        progress: (@MainActor (TransferProgress) -> Void)? = nil
     ) async throws -> URL {
         guard let url = url(for: file.path) else { throw DownloadError.notConnected }
 
@@ -343,6 +344,7 @@ final class MediaDownloader {
         _ bundle: IncidentBundle,
         progress: (@MainActor (Double) -> Void)? = nil
     ) async throws {
+        // Per file, because the clips are fetched one after another.
         let files = bundle.segments.compactMap(\.file)
         guard !files.isEmpty else { throw DownloadError.empty }
 
@@ -364,7 +366,7 @@ final class MediaDownloader {
     private func downloadStreaming(
         from url: URL,
         expected: Int64,
-        progress: (@MainActor (Double) -> Void)?
+        progress: (@MainActor (TransferProgress) -> Void)?
     ) async throws -> (URL, URLResponse) {
         let destination = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -422,7 +424,7 @@ final class MediaDownloader {
         to destination: URL,
         startingAt offset: Int64,
         expected: Int64,
-        progress: (@MainActor (Double) -> Void)?,
+        progress: (@MainActor (TransferProgress) -> Void)?,
         landed: ByteCounter
     ) async throws -> (URLResponse, Int64) {
         let transfer = FileTransfer()
@@ -440,8 +442,8 @@ final class MediaDownloader {
                 // The transfer calls this from its own queue, so the hop to
                 // the main actor is explicit and the closure is declared
                 // Sendable rather than being promoted on the way through.
-                { @Sendable fraction in
-                    Task { @MainActor in report(fraction) }
+                { @Sendable update in
+                    Task { @MainActor in report(update) }
                 }
             }
         )

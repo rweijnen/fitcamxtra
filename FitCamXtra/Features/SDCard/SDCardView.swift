@@ -294,7 +294,8 @@ struct SDCardView: View {
                         file: file,
                         downloader: state.downloader,
                         isSelected: selected.contains(file.id),
-                        isSelecting: selecting
+                        isSelecting: selecting,
+                        isSaved: state.hasBeenSaved(file)
                     )
                     .onTapGesture {
                         if selecting {
@@ -392,9 +393,11 @@ struct SDCardView: View {
         for (index, file) in files.enumerated() {
             busy = "Saving \(index + 1) of \(files.count)"
             do {
-                try await state.downloader.saveToPhotos(file) { fraction in
-                    busy = "Saving \(index + 1) of \(files.count) — \(Int(fraction * 100))%"
+                try await state.downloader.saveToPhotos(file) { update in
+                    let share = update.fraction.map { " — \(Int($0 * 100))%" } ?? ""
+                    busy = "Saving \(index + 1) of \(files.count)\(share)"
                 }
+                state.markSaved(file)
             } catch {
                 failure = error.localizedDescription
                 break
@@ -457,6 +460,9 @@ struct FileTile: View {
     let downloader: MediaDownloader
     let isSelected: Bool
     let isSelecting: Bool
+    /// Already copied to Photos. Without this the only way to know was to
+    /// save it again and wait out another 80 MB.
+    let isSaved: Bool
 
     @State private var thumbnail: UIImage?
 
@@ -486,6 +492,14 @@ struct FileTile: View {
                             .foregroundStyle(Palette.ink)
                             .padding(4)
                             .background(Circle().fill(Color.black.opacity(0.45)))
+                    }
+                    if isSaved {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Palette.accentInk)
+                            .padding(4)
+                            .background(Circle().fill(Palette.accent))
+                            .accessibilityLabel("Already saved to Photos")
                     }
                     Spacer()
                     if file.kind == .photo {

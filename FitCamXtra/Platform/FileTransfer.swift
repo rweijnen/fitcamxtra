@@ -40,7 +40,8 @@ final class FileTransfer: NSObject, @unchecked Sendable {
     private var continuation: CheckedContinuation<Result, Error>?
     private var response: URLResponse?
 
-    private var onProgress: (@Sendable (Double) -> Void)?
+    private var onProgress: (@Sendable (TransferProgress) -> Void)?
+    private var startedAt = Date()
     private var landed: (@Sendable (Int64) -> Void)?
 
     private var offset: Int64 = 0
@@ -48,6 +49,7 @@ final class FileTransfer: NSObject, @unchecked Sendable {
     private var expected: Int64 = 0
     private var resumed = false
     private var lastReported = 0.0
+    private var lastReportedAt = 0.0
     private var failure: Error?
 
     /// Appends the bytes missing from `destination` to it.
@@ -66,8 +68,9 @@ final class FileTransfer: NSObject, @unchecked Sendable {
         expected: Int64,
         timeout: TimeInterval = 600,
         landed: @escaping @Sendable (Int64) -> Void,
-        progress: (@Sendable (Double) -> Void)?
+        progress: (@Sendable (TransferProgress) -> Void)?
     ) async throws -> Result {
+        startedAt = Date()
         self.offset = offset
         self.written = offset
         self.expected = expected
@@ -155,15 +158,27 @@ extension FileTransfer: URLSessionDataDelegate {
         written += Int64(data.count)
         landed?(written)
 
+        guard let onProgress else { return }
+
         let reported = response?.expectedContentLength ?? -1
         let total = reported > 0 ? reported + (resumed ? offset : 0) : expected
-        guard total > 0, let onProgress else { return }
+        let fraction = total > 0 ? min(Double(written) / Double(total), 1) : 0
 
-        let fraction = min(Double(written) / Double(total), 1)
-        // Only on visible movement: this drives a view.
-        guard fraction - lastReported >= 0.01 else { return }
+        // On visible movement, or every half second when the size is unknown
+        // and there is no percentage to move. This drives a view.
+        let elapsed = Date().timeIntervalSince(startedAt)
+        let moved = fraction - lastReported >= 0.01
+        guard moved || elapsed - lastReportedAt >= 0.5 else { return }
         lastReported = fraction
-        onProgress(fraction)
+        lastReportedAt = elapsed
+
+        onProgress(TransferProgress(
+            bytesReceived: written,
+            totalBytes: total > 0 ? total : nil,
+            // Measured over this attempt, which is what the person is
+            // watching; a resumed download reports the speed it is going now.
+            bytesPerSecond: elapsed > 0.5 ? Double(written - offset) / elapsed : 0
+        ))
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {

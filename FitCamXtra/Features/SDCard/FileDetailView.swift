@@ -10,7 +10,10 @@ struct FileDetailView: View {
 
     @State private var player: AVPlayer?
     @State private var image: UIImage?
-    @State private var saveLabel = "Save to Photos"
+    /// What the transfer has actually done, rather than a percentage alone.
+    @State private var progress: TransferProgress?
+    /// Sticks after a save, so the screen says so until the clip is left.
+    @State private var justSaved = false
     @State private var isBusy = false
     @State private var failure: String?
     @State private var showDeleteConfirm = false
@@ -181,24 +184,66 @@ struct FileDetailView: View {
         return parts.isEmpty ? "size unknown" : parts.joined(separator: " - ")
     }
 
+    private var alreadySaved: Bool { justSaved || state.hasBeenSaved(file) }
+
     private var saveButton: some View {
-        Button {
-            Task { await save() }
-        } label: {
-            Text(saveLabel)
-                .font(Typo.sans(.cardTitle, .semibold))
-                .foregroundStyle(Palette.accentInk)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 13)
-                .background(
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                Task { await save() }
+            } label: {
+                ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: Metrics.Radius.card, style: .continuous)
-                        .fill(Palette.accent)
-                )
+                        .fill(alreadySaved && !isBusy ? Palette.accent.opacity(0.18) : Palette.accent)
+
+                    // The bar fills behind the label rather than the label
+                    // sitting on a solid orange block: dark text on orange at
+                    // 15% opacity was unreadable, and the only sign a save had
+                    // finished was the words changing.
+                    if let fraction = progress?.fraction {
+                        GeometryReader { geometry in
+                            RoundedRectangle(cornerRadius: Metrics.Radius.card, style: .continuous)
+                                .fill(Palette.accentInk.opacity(0.22))
+                                .frame(width: geometry.size.width * fraction)
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        if alreadySaved && !isBusy {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Palette.accent)
+                        }
+                        Text(buttonTitle)
+                            .font(Typo.sans(.cardTitle, .semibold))
+                            .foregroundStyle(alreadySaved && !isBusy ? Palette.accent : Palette.accentInk)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .frame(height: 48)
+            }
+            .buttonStyle(.plain)
+            .disabled(isBusy || isSharing)
+            .accessibilityLabel(alreadySaved ? "Save this clip to Photos again" : "Save this clip to Photos")
+
+            if let progress {
+                Text(progress.detailLabel)
+                    .font(Typo.mono(.detail))
+                    .foregroundStyle(Palette.inkSecondary)
+            } else if alreadySaved {
+                Text("Already in your Photos library. Saving again makes a second copy.")
+                    .font(Typo.mono(.micro))
+                    .foregroundStyle(Palette.inkQuaternary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(isBusy || isSharing)
-        .opacity(isBusy ? 0.7 : 1)
-        .accessibilityLabel("Save this clip to Photos")
+    }
+
+    private var buttonTitle: String {
+        if isBusy {
+            guard let fraction = progress?.fraction else { return "Saving" }
+            return "Saving \(Int(fraction * 100))%"
+        }
+        return alreadySaved ? "Saved to Photos" : "Save to Photos"
     }
 
     /// Straight to Messages, Mail or anywhere else. Saving to Photos and then
@@ -258,8 +303,8 @@ struct FileDetailView: View {
         shareLabel = "Preparing..."
         failure = nil
         do {
-            let url = try await state.downloader.exportForSharing(file) { fraction in
-                shareLabel = "Preparing \(Int(fraction * 100))%"
+            let url = try await state.downloader.exportForSharing(file) { update in
+                shareLabel = update.fraction.map { "Preparing \(Int($0 * 100))%" } ?? "Preparing"
             }
             sharePayload = SharePayload(url: url)
         } catch {
@@ -272,24 +317,21 @@ struct FileDetailView: View {
     private func save() async {
         isBusy = true
         failure = nil
-        saveLabel = "Saving..."
+        progress = nil
         do {
-            // The downloader has reported progress all along; nothing asked
-            // for it, so an 80 MB clip showed "Saving..." and nothing else
-            // for minutes, which is the thing that cannot be told from a hang.
-            try await state.downloader.saveToPhotos(file) { fraction in
-                saveLabel = "Saving \(Int(fraction * 100))%"
+            try await state.downloader.saveToPhotos(file) { update in
+                progress = update
             }
-            saveLabel = "Saved to Photos"
-            try? await Task.sleep(for: .seconds(1.8))
-            saveLabel = "Save to Photos"
+            progress = nil
+            state.markSaved(file)
+            justSaved = true
         } catch MediaDownloader.DownloadError.photosDenied {
             failure = "FitCamXtra is not allowed to add to Photos."
             photosRefused = true
-            saveLabel = "Save to Photos"
+            progress = nil
         } catch {
             failure = error.localizedDescription
-            saveLabel = "Save to Photos"
+            progress = nil
         }
         isBusy = false
     }
