@@ -44,7 +44,7 @@ flag** — a guess is currently drawn exactly like a confirmed value.
 
 | cmd | Used for | The guess | Risk if wrong | How to check |
 | ---: | --- | --- | --- | --- |
-| 4001 | Thumbnails | `str=<camera path>`, e.g. `A:\Novatek\MOVIE\x.MP4`, answering with image bytes. **4002 is the same handler and is untried** | Blank tiles. Harmless, and now logged: the app records the first 300 bytes of whatever comes back instead | Open the SD card screen and export the diagnostics. The log names what the camera sent. If 4001 keeps answering with something else, try 4002 |
+| 4001 / 4002 | Thumbnails | That some parameter form works at all. Percent-encoded, 4001 answers `Status -21`; the app now sends the path raw and tries 4002 after a refusal | Blank tiles, explained on screen | Open the SD card screen and export. If both refuse raw paths too, the parameter is not a path: try an index, or the name alone |
 | 4003 | Delete | Same `str` form, with the file server's `?del=1` as the fallback | A delete that silently does nothing, or deletes the wrong file | Delete one clip, re-read the listing, confirm that file and only that file is gone |
 | 3015 | The card listing | Sent with `par: 0` for the full listing and without `par` for events. The doc records the reply in detail but never mentions a parameter, and the doc's own rule is that `par` means *set* | Unclear — it works, so `par: 0` is evidently harmless | Send it both ways and compare the replies. Then record which form is right in FIRMWARE_API.md |
 | 3030 | Resolution options | A reply of `<item>` elements carrying `index`, `size` and `framerate`. The doc records the index→mode table but never the XML | The resolution row offers no choices at all | Export the diagnostics after opening Settings; the raw 3030 reply is logged |
@@ -56,7 +56,7 @@ flag** — a guess is currently drawn exactly like a confirmed value.
 | --- | ---: | ---: | --- |
 | SD card health | 3024 | `<Value>1</Value>` | What the scale is. The app treats anything other than 1 as a problem and shows no percentage. Whether 1 means "healthy" is an assumption |
 | Battery | 3019 | `<Value>5</Value>` | Same. No percentage is shown. Whether 8005 carries a finer value is untested |
-| Recording elapsed | 2016 | `<Value>9</Value>` | Whether this is seconds into the current clip, a clip index, or something else. The Live timer treats it as seconds |
+| Recording elapsed | 2016 | `<Value>9</Value>` | Whether this is seconds into the current clip, a clip index, or something else. The Live timer treats it as seconds. The same command in the 3014 list reports 1 while recording, which is a different thing again |
 | Wifi scan signal | 8050 | `RSSI 54 dBm` | Positive numbers with a dBm label. Treated as relative strength, so the ordering may be inverted |
 | Locked-clip attribute | 3015 | `ATTR 32` | An ordinary clip is 32 (archive). The app treats bit 0, read-only, as the lock. **No clip locked by the button has been seen yet**, so the whole Events tab rests on this |
 
@@ -97,6 +97,13 @@ session does not have to rediscover them.
 | 1003 | (snapshot end) | Pairs with 1001 |
 | 4004 | (file op) | An unidentified file operation next to delete |
 | 5001 | `UploadFile` | The file server already accepts multipart POST |
+
+## 4c. Settled by the 19 September capture
+
+Kept here only until someone reads FIRMWARE_API.md, where these now live: 2015
+answers -13 and live video works regardless; 4001 answers -21 for a
+percent-encoded path; and a resolution change was accepted and ignored while
+the camera was recording.
 
 ## 5. Assumptions in the app's own logic
 

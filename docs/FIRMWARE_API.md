@@ -139,6 +139,48 @@ cannot join that network. Worth knowing before relying on station mode.
 On patched firmware the mode field is no longer zeroed at boot, so the camera
 comes back up in station mode by itself.
 
+**Live video needs no start command; it needs the right PLAY target.** On
+19 September 2026 a build that sends `cmd=2015` first and addresses PLAY at
+the server's `Content-Base` played H.265 immediately:
+
+```
+cmd=2015  ->  <Status>-13</Status>     # refused
+RTSP video track: H265, payload type 96
+RTSP playing
+First frame decoded and shown (31828 bytes)
+```
+
+2015 answered **-13** and the stream worked anyway, so the earlier
+`404 Stream Not Found` was the PLAY URL, not a stream that had never been
+started. RFC 2326 puts aggregate control at the Content-Base the server gives,
+and LIVE555 answers 404 for anything else. 2015 is still sent — harmless, and
+another unit may need it — but nothing depends on it succeeding.
+
+**The live stream is dropped after about half a minute when a clip is
+downloading at the same time.** Seen as `NWError 53, software caused
+connection abort` 33 seconds in, with an 80 MB download in flight. Not yet
+established whether an idle stream lasts longer.
+
+**`cmd=4001` answers `Status -21` for a thumbnail.** Asked with the camera's
+own path percent-encoded:
+
+```
+/?custom=1&cmd=4001&str=A%3A%5CNovatek%5CMOVIE%5C20260918104124_000092.MP4
+->  <Cmd>4001</Cmd><Status>-21</Status>
+```
+
+-21 is the same code `3031` returns for a command it will not perform here.
+Since the station credentials had to be sent with a literal colon rather than
+`%3A`, the next thing to rule out is the encoding: the app now sends the path
+raw, and falls back to `4002`, which shares 4001's handler in the command
+table.
+
+**A resolution change was accepted and ignored.** `cmd=2002&par=7` answered
+Status 0 and `3014` still reported 10 afterwards. The camera was recording at
+the time (`2016 = 1`), which it does by default whenever it has power, so the
+likeliest explanation is that it will not change resolution mid-recording.
+Untested: stop recording with `cmd=2001&par=0`, set, then start again.
+
 **The camera answers ICMP echo.** Confirmed on hardware. Discovery pings the
 range first and asks only the addresses that reply for `cmd=3012`, which turns
 253 connection attempts into a handful. The full HTTP sweep still runs when the

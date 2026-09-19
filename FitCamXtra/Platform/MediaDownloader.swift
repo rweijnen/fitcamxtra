@@ -27,6 +27,7 @@ final class MediaDownloader {
             // for the rest of the process.
             thumbnailsUnavailable = false
             hasLoggedThumbnailFailure = false
+            useAlternateThumbnailCommand = false
         }
     }
     private let sink: LogSink
@@ -37,6 +38,10 @@ final class MediaDownloader {
     /// that is not an image. Read by the card screen, which owes the user an
     /// explanation for a grid of placeholders.
     private(set) var thumbnailsUnavailable = false
+    /// Set once 4001 has refused, so the next tile tries 4002 — the firmware's
+    /// command table gives both the same handler — before previews are written
+    /// off entirely.
+    private var useAlternateThumbnailCommand = false
     /// Work the app started by itself waits behind anything a person is
     /// waiting on. The camera serves one thing at a time well.
     let gate: CameraActivityGate
@@ -121,13 +126,11 @@ final class MediaDownloader {
         if file.kind == .photo, let url = url(for: file.path) {
             request = URLRequest(url: url)
         } else if let host {
-            // The camera's own path, backslashes and drive letter included.
-            // The file server's path is a different thing, and the CGI answers
-            // a request for it with something that is not an image.
-            let escaped = file.cameraPath
-                .addingPercentEncoding(withAllowedCharacters: .alphanumerics.union(.init(charactersIn: "-._~")))
-                ?? file.cameraPath
-            request = URL(string: "http://\(host)/?custom=1&cmd=4001&str=\(escaped)").map { URLRequest(url: $0) }
+            // The camera's own path, sent literally. The percent-encoded form
+            // was answered with Status -21, and this CGI has never been shown
+            // to decode percent escapes — the station credentials had to go
+            // out raw for the same reason.
+            request = thumbnailRequest(host: host, command: thumbnailCommand, path: file.cameraPath)
         } else {
             request = nil
         }
@@ -177,6 +180,25 @@ final class MediaDownloader {
     /// image is worth recording. Logged once per connection rather than once
     /// per tile, because a full card would otherwise flood the log with the
     /// same line.
+    /// 4001 and 4002 share a handler in the firmware's command table, so if
+    /// one refuses, the other costs a single request to find out.
+    private var thumbnailCommand: Int {
+        useAlternateThumbnailCommand ? 4002 : 4001
+    }
+
+    private func thumbnailRequest(host: String, command: Int, path: String) -> URLRequest? {
+        // Only what would end the query string is encoded. A colon and a
+        // backslash are legal in a query, and this camera wants them as they
+        // are.
+        let encoded = path
+            .replacingOccurrences(of: "%", with: "%25")
+            .replacingOccurrences(of: "&", with: "%26")
+            .replacingOccurrences(of: "#", with: "%23")
+            .replacingOccurrences(of: " ", with: "%20")
+        return URL(string: "http://\(host)/?custom=1&cmd=\(command)&str=\(encoded)")
+            .map { URLRequest(url: $0) }
+    }
+
     private func noteThumbnailFailure(
         _ file: MediaFile,
         _ reason: String,
@@ -184,6 +206,15 @@ final class MediaDownloader {
         data: Data?,
         latching: Bool
     ) {
+        // One refusal moves to the other command; a second gives up.
+        if latching, !useAlternateThumbnailCommand {
+            useAlternateThumbnailCommand = true
+            sink.log(.info, .http,
+                     "cmd=4001 refused a thumbnail; trying cmd=4002 for the next one",
+                     detail: "\(file.displayName): \(reason)")
+            return
+        }
+
         // Only a camera that answered and refused is worth giving up on. A
         // timeout says the link was busy, which it often is while a clip is
         // downloading, and the next tile deserves its own try.

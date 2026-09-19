@@ -134,6 +134,16 @@ final class SettingsStore {
             if let actual = snapshot.value(for: setting.command), actual != par {
                 sink.log(.warning, .app,
                          "\(setting.label) was set to \(par) but reads back as \(actual)")
+
+                // The camera accepted the command and kept its old value. Seen
+                // on hardware with Video Resolution while the camera was
+                // recording, which it does by default whenever it has power.
+                let recording = snapshot.value(for: .recordStatus) == 1
+                lastError = recording
+                    ? "The camera kept its previous \(setting.label.lowercased()). It may be "
+                        + "refusing to change that while it is recording."
+                    : "The camera kept its previous \(setting.label.lowercased()) and did not "
+                        + "say why."
             }
         } catch {
             overrides.removeValue(forKey: setting.command.rawValue)
