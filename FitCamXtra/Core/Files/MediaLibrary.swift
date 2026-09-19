@@ -171,9 +171,19 @@ final class MediaLibrary {
                 startPrefetch()
                 return
             }
-            sink.log(.warning, .app, "The file list came back empty or in an unrecognised shape")
-            files = []
-            isShowingCachedListing = false
+            // The request succeeded and the reply could not be read, which is
+            // not the same as a card with nothing on it. Saying "nothing on
+            // the card yet" here would be the listing equivalent of the bug
+            // this type was rewritten to stop — and clearing files would take
+            // away the listing the user is looking at as well.
+            sink.log(.warning, .app, "The file list came back empty or in an unrecognised shape",
+                     detail: String(response.raw.prefix(600)))
+            if files.isEmpty {
+                lastError = "The camera sent a file list the app could not read."
+            } else {
+                lastError = "The camera sent a file list the app could not read, so this is "
+                    + "still the previous one."
+            }
         } catch {
             lastError = error.localizedDescription
             sink.log(.error, .app, "File list failed: \(error.localizedDescription)")

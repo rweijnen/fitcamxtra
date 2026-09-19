@@ -37,6 +37,14 @@ public enum SettingKind: Sendable {
     case destructiveAction(confirmTitle: String, confirmBody: String, par: Int?)
 }
 
+extension CameraSetting {
+    /// True for the rows that do something rather than hold a value.
+    public var isAction: Bool {
+        if case .destructiveAction = kind { return true }
+        return false
+    }
+}
+
 public struct SettingOption: Sendable, Equatable, Identifiable {
     public let par: Int
     public let label: String
@@ -173,19 +181,12 @@ public enum SettingsRegistry {
         // Telling a dashcam owner their collision sensing is off, when the
         // row may control something about stills, is worse than not offering
         // the row at all. It comes back when hardware says what it does.
-        CameraSetting(
-            id: "language",
-            group: .advanced,
-            label: "Camera Language",
-            command: .language,
-            kind: .options([
-                SettingOption(0, "English"),
-                SettingOption(1, "Chinese"),
-                SettingOption(2, "Japanese"),
-                SettingOption(3, "Russian"),
-            ]),
-            provisional: true
-        ),
+        // Camera Language is not offered. The firmware's table confirms the
+        // command (3008, Basic_Device_SetLanguage, config field 0x43) and says
+        // nothing about its values; this unit reports 6 against a guessed list
+        // that stopped at 3, so the row showed "unknown (6)" and any choice
+        // from it would have been a guess applied to the camera's menus. It
+        // returns when the value list is known.
 
         // MARK: Parking
         CameraSetting(

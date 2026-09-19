@@ -150,6 +150,7 @@ final class VideoRenderer {
         }
 
         guard let sampleBuffer = Self.makeSampleBuffer(avcc: avcc, format: formatDescription) else {
+            lastError = "A \(avcc.count)-byte frame could not be prepared for the decoder"
             sink?.log(.error, .app,
                       "CoreMedia would not wrap a \(avcc.count)-byte frame in a sample buffer")
             return

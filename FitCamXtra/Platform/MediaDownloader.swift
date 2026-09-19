@@ -479,7 +479,12 @@ final class MediaDownloader {
                 sink.log(.info, .app, "Deleted \(file.displayName)")
                 return
             } catch {
-                sink.log(.debug, .app, "Delete command refused, trying the file server")
+                // Raised from debug: this is the path a locked clip takes,
+                // because the CGI is tried first for clearing the protect
+                // bit, and a refusal here is the reason the fallback runs.
+                sink.log(.warning, .app,
+                         "The delete command refused \(file.displayName): "
+                         + "\(error.localizedDescription). Trying the file server.")
             }
         }
 
@@ -488,10 +493,23 @@ final class MediaDownloader {
         guard let url = URL(string: "http://\(host)\(escaped)?del=1") else {
             throw DownloadError.notConnected
         }
-        let (_, response) = try await session.data(from: url)
+        let (data, response) = try await session.data(from: url)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw DownloadError.badResponse(http.statusCode)
         }
+
+        // A 200 is not a deletion. This server answers with the same XML the
+        // CGI uses, and a negative Status inside a 200 read as success — so
+        // the app reported clips erased that were still on the card, and the
+        // next listing quietly brought them back.
+        if let parsed = try? CameraResponseParser.parse(data),
+           let status = parsed.status, status != 0 {
+            sink.log(.error, .app,
+                     "The file server refused to delete \(file.displayName): status \(status)",
+                     detail: String(parsed.raw.prefix(400)))
+            throw CameraError.commandFailed(command: CameraCommand.deleteFile.rawValue, status: status)
+        }
+
         sink.log(.info, .app, "Deleted \(file.displayName) via the file server")
     }
 }

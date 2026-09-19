@@ -33,22 +33,27 @@ struct SettingRow: View {
                     }
 
                     if setting.provisional {
-                        // The flag has been in the model since these rows
-                        // shipped and no screen read it, so a guess was drawn
-                        // exactly like a confirmed value.
-                        Text("unconfirmed on this firmware")
+                        // What is unconfirmed is the meaning of the numbers,
+                        // not the setting: the firmware's command table gives
+                        // every command a name and a config field, and says
+                        // nothing about what its values mean.
+                        Text("what the values mean is unconfirmed")
                             .font(Typo.mono(.micro))
                             .foregroundStyle(Palette.accentText)
                     }
 
-                    if case .unavailable(let reason) = value {
-                        Text(reason)
-                            .font(Typo.mono(.micro))
-                            .foregroundStyle(Palette.accentText)
-                    } else if case .unknown = value, !isPending {
-                        Text("not read yet")
-                            .font(Typo.mono(.micro))
-                            .foregroundStyle(Palette.inkFaint)
+                    // A destructive action has no value to read, so it has no
+                    // business saying "not read yet" underneath itself.
+                    if !setting.isAction {
+                        if case .unavailable(let reason) = value {
+                            Text(reason)
+                                .font(Typo.mono(.micro))
+                                .foregroundStyle(Palette.accentText)
+                        } else if case .unknown = value, !isPending {
+                            Text("not read yet")
+                                .font(Typo.mono(.micro))
+                                .foregroundStyle(Palette.inkFaint)
+                        }
                     }
                 }
 

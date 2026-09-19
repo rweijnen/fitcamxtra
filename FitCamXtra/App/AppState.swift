@@ -122,6 +122,8 @@ final class AppState {
 
     // Live
     var isRecording = false
+    /// Why the last start or stop did not happen. Shown on Live.
+    var recordingProblem: String?
     var elapsedSeconds = 0
     var isImmersive = false
     var snapshotToastVisible = false
@@ -660,13 +662,37 @@ final class AppState {
 
     // MARK: - Live
 
+    /// Starts or stops **the camera's** recording to its card. Nothing is
+    /// recorded to the phone; this is cmd=2001, the dashcam's own switch.
     func toggleRecording() async {
         guard let client else { return }
         let wanted = !isRecording
         do {
             try await client.send(.setRecordStatus, par: wanted ? 1 : 0)
             setRecording(wanted, elapsed: 0)
+            recordingProblem = nil
+
+            // Status 0 means the command was accepted, not that it was
+            // applied — the same distinction that made a resolution change
+            // look like it had worked. Ask the camera what it is doing.
+            await refreshStatus()
+            if isRecording != wanted {
+                recordingProblem = wanted
+                    ? "The camera did not start recording."
+                    : "The camera is still recording."
+                sink.log(.warning, .app, recordingProblem ?? "")
+            } else {
+                sink.log(.info, .app, wanted ? "Camera recording started" : "Camera recording stopped")
+            }
         } catch {
+            // This used to re-read the status and say nothing, so a camera
+            // that refused left the button springing back with no
+            // explanation — on the one control whose whole job is making
+            // sure the car is being recorded.
+            recordingProblem = wanted
+                ? "The camera would not start recording: \(error.localizedDescription)"
+                : "The camera would not stop recording: \(error.localizedDescription)"
+            sink.log(.error, .app, recordingProblem ?? "")
             await refreshStatus()
         }
     }

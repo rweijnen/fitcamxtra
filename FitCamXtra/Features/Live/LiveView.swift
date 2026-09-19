@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LiveView: View {
     @Environment(AppState.self) private var state
+    @State private var showStopRecordingConfirm = false
 
     var body: some View {
         ZStack {
@@ -24,6 +25,12 @@ struct LiveView: View {
 
             if state.snapshotToastVisible {
                 snapshotToast
+            }
+
+            if let problem = state.recordingProblem {
+                // The one control whose job is making sure the car is being
+                // recorded used to fail by springing back in silence.
+                recordingProblemBanner(problem)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -59,6 +66,9 @@ struct LiveView: View {
                 overlayMessage("Starting the live stream")
             case .failed(let reason):
                 overlayMessage("Live view unavailable", detail: reason)
+            case .playing where state.liveStream.decoderProblem != nil:
+                overlayMessage("Live view unavailable", detail: state.liveStream.decoderProblem)
+
             case .playing where state.liveStream.framesRendered == 0:
                 overlayMessage("Waiting for the first frame")
             default:
@@ -184,9 +194,16 @@ struct LiveView: View {
 
             Spacer()
 
-            // Record
+            // The camera's own recording, not the phone's. Stopping it is
+            // the most consequential thing in the app — the car stops being
+            // recorded — and it was a single tap with no confirmation while
+            // deleting one clip asked twice.
             Button {
-                Task { await state.toggleRecording() }
+                if state.isRecording {
+                    showStopRecordingConfirm = true
+                } else {
+                    Task { await state.toggleRecording() }
+                }
             } label: {
                 ZStack {
                     Circle()
@@ -204,6 +221,21 @@ struct LiveView: View {
                 }
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(state.isRecording
+                                ? "Stop the camera recording"
+                                : "Start the camera recording")
+            .confirmationDialog(
+                "Stop the camera recording?",
+                isPresented: $showStopRecordingConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Stop recording", role: .destructive) {
+                    Task { await state.toggleRecording() }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The camera stops recording to its card until it is started again or it loses power. Nothing is recorded to this phone either way.")
+            }
 
             Spacer()
 
@@ -218,6 +250,32 @@ struct LiveView: View {
     }
 
     // MARK: - States
+
+    private func recordingProblemBanner(_ text: String) -> some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 10) {
+                Text(text)
+                    .font(Typo.sans(.detail, .semibold))
+                    .foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                Button("Dismiss") { state.recordingProblem = nil }
+                    .font(Typo.sans(.detail, .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .frame(minHeight: 44)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: Metrics.Radius.card, style: .continuous)
+                    .fill(Palette.destructiveBg)
+            )
+            .padding(.horizontal, Metrics.gutter)
+            .padding(.bottom, 16)
+        }
+        .transition(.opacity)
+    }
 
     private var snapshotToast: some View {
         VStack {

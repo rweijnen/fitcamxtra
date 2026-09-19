@@ -18,6 +18,11 @@ final class LiveStream {
 
     private(set) var status: Status = .stopped
     private(set) var framesRendered = 0
+    /// Why the picture is not there, when the decoder knows. It recorded this
+    /// in four places and nothing read it, so a stream that RTSP considered
+    /// playing sat on "Waiting for the first frame" forever with the reason
+    /// only in the log.
+    private(set) var decoderProblem: String?
 
     @ObservationIgnored let renderer: VideoRenderer
     @ObservationIgnored private var client: RTSPClient?
@@ -49,6 +54,7 @@ final class LiveStream {
         self.host = host
         status = .connecting
         renderer.reset()
+        decoderProblem = nil
         holdsGate = true
         enqueueGate { await $0.beginInteractive() }
 
@@ -91,6 +97,9 @@ final class LiveStream {
                         self.renderer.handle(unit)
                         if self.renderer.framesRendered != self.framesRendered {
                             self.framesRendered = self.renderer.framesRendered
+                        }
+                        if self.renderer.lastError != self.decoderProblem {
+                            self.decoderProblem = self.renderer.lastError
                         }
                     }
                 },
