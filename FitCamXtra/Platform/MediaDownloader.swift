@@ -307,7 +307,9 @@ final class MediaDownloader {
             throw error
         }
 
-        progress?(1)
+        // A final report at the real size, so the last thing the screen shows
+        // is the whole file rather than the last chunk before it finished.
+        progress?(TransferProgress(bytesReceived: size, totalBytes: size, bytesPerSecond: 0))
         sink.log(.info, .app, "Saved \(file.displayName) to Photos")
     }
 
